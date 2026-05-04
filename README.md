@@ -93,14 +93,17 @@ Alerts are triggered when:
 ### 1. Start Flask API
 ```bash
 python api/app.py
-
+````
 ### 2. Start UDP Bridge
 ```bash
 python network/udp_bridge.py
-
+````
 ### 3. Start Simulator
 ```bash
 python sensor/simulator.py
+````
+
+---
 
 # 📈 Dashboard
 
@@ -112,6 +115,8 @@ Grafana is used for real-time visualization of:
 -Head tilt angle
 -Reaction delay
 
+---
+
 # 🧪 Future Improvements
 
 -Camera-based detection (OpenCV)
@@ -119,6 +124,8 @@ Grafana is used for real-time visualization of:
 -Deployment on embedded systems (Raspberry Pi)
 -Cloud integration
 
-#👨‍💻 Author
+---
+
+# 👨‍💻 Author
 
 Sudenur Tilla
