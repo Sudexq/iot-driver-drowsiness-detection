@@ -105,27 +105,27 @@ python sensor/simulator.py
 
 ---
 
-# 📈 Dashboard
+## 📈 Dashboard
 
 Grafana is used for real-time visualization of:
 
--Drowsiness score
--Blink rate
--Eye closure duration
--Head tilt angle
--Reaction delay
+- Drowsiness score
+- Blink rate
+- Eye closure duration
+- Head tilt angle
+- Reaction delay
 
 ---
 
-# 🧪 Future Improvements
+## 🧪 Future Improvements
 
--Camera-based detection (OpenCV)
--Model optimization
--Deployment on embedded systems (Raspberry Pi)
--Cloud integration
+- Camera-based detection (OpenCV)
+- Model optimization
+- Deployment on embedded systems (Raspberry Pi)
+- Cloud integration
 
 ---
 
-# 👨‍💻 Author
+## 👨‍💻 Author
 
 Sudenur Tilla
