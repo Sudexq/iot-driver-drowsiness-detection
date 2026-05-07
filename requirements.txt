@@ -1,2 +1,8 @@
 flask
 requests
+scikit-learn
+numpy
+pandas
+joblib
+opencv-python
+mediapipe
