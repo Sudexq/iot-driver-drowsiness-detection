@@ -8,17 +8,20 @@ import os
 from collections import deque
 from datetime import datetime, timezone
 
-# Proje kökünü PYTHONPATH'e ekle (security modülünü import edebilmek için)
+# Add project root to PYTHONPATH
 sys.path.insert(0, os.path.abspath(os.path.join(os.path.dirname(__file__), '..')))
 from security.crypto import sign_payload, get_secret
+from camera.phone_detector import PhoneDetector
+from camera.gaze_detector import GazeDetector
+from alerts.sound_alert import play_alarm, stop_alarm
 
-# HMAC secret'i bir kez yükle
+# Load HMAC secret once
 HMAC_SECRET = get_secret()
 
-print("📷 Camera Drowsiness Detector — Final Version")
+print("Camera Drowsiness Detector — Final Version")
 print("=" * 50)
 
-# ── OpenCV cascade ────────────────────────────────────────────────
+# ── OpenCV cascades ───────────────────────────────────────────────
 face_cascade = cv2.CascadeClassifier(
     cv2.data.haarcascades + 'haarcascade_frontalface_default.xml'
 )
@@ -30,24 +33,21 @@ eye_cascade = cv2.CascadeClassifier(
 UDP_IP       = "127.0.0.1"
 UDP_PORT     = 9999
 DRIVER_ID    = "driver_camera_001"
-UDP_INTERVAL = 1.0   # saniyede bir gönder
+UDP_INTERVAL = 1.0   # send every 1 second
 
-# ── Detector sabitler ─────────────────────────────────────────────
-BLINK_RATE_WINDOW    = 60.0   # blink rate penceresi (sn)
-EYE_CLOSE_THRESHOLD  = 0.5    # bu süreden uzun kapanma = drowsy
-MIN_BLINK_INTERVAL   = 0.25   # iki blink arası min süre
-MIN_EYE_CLOSE_FRAMES = 3      # kaç frame kapalı kalırsa blink
+# ── Detector constants ────────────────────────────────────────────
+BLINK_RATE_WINDOW    = 60.0   # blink rate window (seconds)
+EYE_CLOSE_THRESHOLD  = 0.5    # longer than this = drowsy
+MIN_BLINK_INTERVAL   = 0.25   # min time between blinks
+MIN_EYE_CLOSE_FRAMES = 3      # frames closed before counting as blink
 
 # ── UDP socket ────────────────────────────────────────────────────
 udp_sock = socket.socket(socket.AF_INET, socket.SOCK_DGRAM)
 
-# ── State hesaplama ───────────────────────────────────────────────
+# ── State estimation ──────────────────────────────────────────────
 
 def estimate_state(blink_rate, eye_closure_duration, head_tilt_angle):
-    """
-    Sensör değerlerinden sürücü durumunu tahmin et.
-    Simülatördeki state field'ı ile uyumlu.
-    """
+    """Estimate driver state from sensor values."""
     drowsy_score = 0
 
     if blink_rate < 8:
@@ -72,14 +72,17 @@ def estimate_state(blink_rate, eye_closure_duration, head_tilt_angle):
     else:
         return "alert"
 
-# ── UDP gönderici ─────────────────────────────────────────────────
+# ── UDP sender ────────────────────────────────────────────────────
 
 def send_udp_packet(blink_rate, eye_closure_duration,
-                    head_tilt_angle, reaction_delay=250.0):
-    """
-    Mevcut pipeline ile uyumlu JSON paketi gönder.
-    Field isimleri simulator.py ile birebir aynı.
-    """
+                    head_tilt_angle, reaction_delay=250.0,
+                    phone_result=None, gaze_result=None):
+    """Send JSON packet compatible with existing pipeline."""
+    if phone_result is None:
+        phone_result = {"distraction": False, "risk_score": 0.0, "detail": ""}
+    if gaze_result is None:
+        gaze_result = {"gaze_down": False, "gaze_score": 0.0, "gaze_down_secs": 0.0}
+
     state = estimate_state(
         blink_rate, eye_closure_duration, head_tilt_angle
     )
@@ -91,17 +94,23 @@ def send_udp_packet(blink_rate, eye_closure_duration,
         "eye_closure_duration": round(float(eye_closure_duration), 3),
         "head_tilt_angle":      round(float(head_tilt_angle), 1),
         "reaction_delay":       round(float(reaction_delay), 1),
+        "phone_distraction":    phone_result.get("distraction", False),
+        "phone_risk_score":     phone_result.get("risk_score", 0.0),
+        "phone_detail":         phone_result.get("detail", ""),
+        "gaze_down":            gaze_result.get("gaze_down", False),
+        "gaze_score":           gaze_result.get("gaze_score", 0.0),
+        "gaze_down_secs":       gaze_result.get("gaze_down_secs", 0.0),
         "source":               "camera",
         "sent_at":              datetime.now(timezone.utc).isoformat()
     }
 
-    # HMAC ile imzala — pipeline'ın diğer tarafı (udp_bridge) doğrulayacak
+    # Sign with HMAC — udp_bridge will verify
     envelope = sign_payload(payload, secret=HMAC_SECRET)
     data = json.dumps(envelope).encode("utf-8")
     udp_sock.sendto(data, (UDP_IP, UDP_PORT))
     return payload
 
-# ── Drowsiness Detector sınıfı ────────────────────────────────────
+# ── Drowsiness Detector class ─────────────────────────────────────
 
 class DrowsinessDetector:
     def __init__(self):
@@ -123,11 +132,10 @@ class DrowsinessDetector:
         if eyes_detected:
             self.eye_frames += 1
 
-            # Gözler yeniden göründü → blink tamamlandı mı?
+            # Eyes reappeared — did a blink complete?
             if (not self.eyes_visible_last
                     and self.no_eye_frames >= MIN_EYE_CLOSE_FRAMES
-                    and (now - self.last_blink_time)
-                    >= MIN_BLINK_INTERVAL):
+                    and (now - self.last_blink_time) >= MIN_BLINK_INTERVAL):
                 self.blink_count += 1
                 self.blink_times.append(now)
                 self.last_blink_time = now
@@ -149,7 +157,7 @@ class DrowsinessDetector:
             )
             self.eyes_visible_last = False
 
-        # Blink rate — son 60 saniye
+        # Blink rate — last 60 seconds
         cutoff = now - BLINK_RATE_WINDOW
         while self.blink_times and self.blink_times[0] < cutoff:
             self.blink_times.popleft()
@@ -162,7 +170,7 @@ class DrowsinessDetector:
         return self.blink_count, blink_rate, self.last_closure_dur
 
 
-# ── Baş eğimi ─────────────────────────────────────────────────────
+# ── Head tilt ─────────────────────────────────────────────────────
 
 def get_head_tilt(face_rect, frame_shape):
     x, y, w, h       = face_rect
@@ -174,7 +182,7 @@ def get_head_tilt(face_rect, frame_shape):
     return min(tilt, 45.0)
 
 
-# ── Görselleştirme ────────────────────────────────────────────────
+# ── Visualization ─────────────────────────────────────────────────
 
 STATE_COLORS = {
     "alert":        (0, 255, 0),
@@ -187,7 +195,7 @@ def draw_info(frame, blink_count, blink_rate, closure_dur,
               last_state, last_risk):
     h, w = frame.shape[:2]
 
-    # Panel arka planı
+    # Panel background
     overlay = frame.copy()
     cv2.rectangle(overlay, (10, 10), (330, 260), (0, 0, 0), -1)
     cv2.addWeighted(overlay, 0.45, frame, 0.55, 0, frame)
@@ -203,26 +211,19 @@ def draw_info(frame, blink_count, blink_rate, closure_dur,
                     cv2.FONT_HERSHEY_SIMPLEX,
                     scale, color, thickness)
 
-    put("Driver Drowsiness Monitor",
-        35, (255, 255, 0), 0.6, bold=True)
+    put("Driver Drowsiness Monitor", 35, (255, 255, 0), 0.6, bold=True)
+    put(f"Eye state    : {eye_text}",          62, eye_color)
+    put(f"Closure dur  : {closure_dur:.3f} s", 87)
+    put(f"Blink count  : {blink_count}",        112)
+    put(f"Blink rate   : {blink_rate:.1f} /min",137)
+    put(f"Head tilt    : {head_tilt:.1f} deg",  162)
+    put(f"State        : {last_state.upper()}", 187, state_color)
+    put(f"Risk level   : {last_risk.upper()}",  212, state_color)
+    put(f"UDP sent     : #{udp_count}",         237, (0, 255, 150))
 
-    put(f"Eye state    : {eye_text}",
-        62, eye_color)
-    put(f"Closure dur  : {closure_dur:.3f} s",  87)
-    put(f"Blink count  : {blink_count}",         112)
-    put(f"Blink rate   : {blink_rate:.1f} /min", 137)
-    put(f"Head tilt    : {head_tilt:.1f} deg",   162)
-    put(f"State        : {last_state.upper()}",
-        187, state_color)
-    put(f"Risk level   : {last_risk.upper()}",
-        212, state_color)
-    put(f"UDP sent     : #{udp_count}",
-        237, (0, 255, 150))
-
-    # Drowsy uyarı bandı
+    # Drowsy warning band
     if not eyes_detected and closure_dur > EYE_CLOSE_THRESHOLD:
-        cv2.rectangle(frame, (0, h - 60), (w, h),
-                      (0, 0, 180), -1)
+        cv2.rectangle(frame, (0, h - 60), (w, h), (0, 0, 180), -1)
         cv2.putText(frame, "! DROWSY WARNING !",
                     (w // 2 - 150, h - 18),
                     cv2.FONT_HERSHEY_SIMPLEX,
@@ -250,9 +251,7 @@ def draw_closure_bar(frame, closure_dur):
                   (bar_x, bar_bot - fill),
                   (bar_x + 20, bar_bot), color, -1)
 
-    thresh_y = bar_bot - int(
-        bar_h * EYE_CLOSE_THRESHOLD / max_dur
-    )
+    thresh_y = bar_bot - int(bar_h * EYE_CLOSE_THRESHOLD / max_dur)
     cv2.line(frame,
              (bar_x - 5, thresh_y),
              (bar_x + 25, thresh_y),
@@ -267,16 +266,21 @@ def draw_closure_bar(frame, closure_dur):
 # ── Main ──────────────────────────────────────────────────────────
 
 def main():
-    cap      = cv2.VideoCapture(1)
-    detector = DrowsinessDetector()
+    cap       = cv2.VideoCapture(0)
+    detector  = DrowsinessDetector()
+    phone_det = PhoneDetector()
+    gaze_det  = GazeDetector()
 
-    print(f"\n🌐 UDP Hedef     : {UDP_IP}:{UDP_PORT}")
-    print(f"⏱  UDP Aralığı   : {UDP_INTERVAL}s")
-    print(f"👤 Driver ID     : {DRIVER_ID}")
-    print(f"\n⚠️  Önce şunların çalıştığından emin ol:")
+    last_phone_result = {"distraction": False, "risk_score": 0.0, "detail": "starting"}
+    last_gaze_result  = {"gaze_down": False, "gaze_score": 0.0, "gaze_down_secs": 0.0, "detail": "starting"}
+
+    print(f"\n UDP Target     : {UDP_IP}:{UDP_PORT}")
+    print(f"   UDP Interval  : {UDP_INTERVAL}s")
+    print(f"   Driver ID     : {DRIVER_ID}")
+    print(f"\n   Make sure these are running:")
     print(f"   Terminal 1: python api/app.py")
     print(f"   Terminal 2: python network/udp_bridge.py")
-    print(f"\n📷 Kamera başlatılıyor... 'q' ile çık.\n")
+    print(f"\n   Starting camera... press 'q' to quit.\n")
 
     last_udp_time = time.time()
     udp_count     = 0
@@ -293,7 +297,7 @@ def main():
         h, w  = frame.shape[:2]
         gray  = cv2.cvtColor(frame, cv2.COLOR_BGR2GRAY)
 
-        # ── Yüz tespiti ───────────────────────────────────────────
+        # ── Face detection ────────────────────────────────────────
         faces = face_cascade.detectMultiScale(
             gray,
             scaleFactor=1.1,
@@ -317,7 +321,7 @@ def main():
 
             head_tilt = get_head_tilt(faces[0], frame.shape)
 
-            # Yüzün üst %55'inde göz ara
+            # Search eyes in top 55% of face
             roi_y2    = fy + int(fh * 0.55)
             roi_gray  = gray[fy:roi_y2, fx:fx + fw]
             roi_color = frame[fy:roi_y2, fx:fx + fw]
@@ -338,16 +342,35 @@ def main():
                                   (ex + ew, ey + eh),
                                   (255, 100, 0), 2)
         else:
-            cv2.putText(frame, "Yuz bulunamadi",
+            cv2.putText(frame, "Face not found",
                         (20, 50),
                         cv2.FONT_HERSHEY_SIMPLEX,
                         0.8, (0, 0, 255), 2)
 
-        # ── Detector güncelle ─────────────────────────────────────
+        # ── Update detectors ──────────────────────────────────────
         blink_count, blink_rate, closure_dur = \
             detector.update(eyes_detected, h, eye_rects)
 
-        # ── UDP gönder — her 1 saniyede bir ──────────────────────
+        last_phone_result = phone_det.update(frame)
+        phone_det.draw_status(frame, last_phone_result)
+
+        last_gaze_result = gaze_det.update(frame)
+
+        # ── Alarm logic ───────────────────────────────────────────
+        # Only alarm if hand is NOT moving fast (not scratching/waving)
+        phone_moving = last_phone_result.get("detail", "").startswith("kasima")
+
+        gaze_alert  = last_gaze_result.get("gaze_down_secs", 0) > 1.5
+        phone_alert = last_phone_result.get("distraction", False) and not phone_moving
+
+        if gaze_alert:
+            play_alarm("drowsiness")
+        elif phone_alert:
+            play_alarm("distraction")
+        else:
+            stop_alarm()
+
+        # ── Send UDP every 1 second ───────────────────────────────
         now = time.time()
         if now - last_udp_time >= UDP_INTERVAL:
             try:
@@ -355,32 +378,36 @@ def main():
                     blink_rate=blink_rate,
                     eye_closure_duration=closure_dur,
                     head_tilt_angle=head_tilt,
-                    reaction_delay=250.0
+                    reaction_delay=250.0,
+                    phone_result=last_phone_result,
+                    gaze_result=last_gaze_result
                 )
                 udp_count    += 1
                 last_state    = pkt["state"]
                 last_udp_time = now
 
                 ICONS = {
-                    "alert":         "🟢",
-                    "transitioning": "🟡",
-                    "drowsy":        "🔴"
+                    "alert":         "[OK]",
+                    "transitioning": "[!!]",
+                    "drowsy":        "[!!]"
                 }
-                icon = ICONS.get(last_state, "⚪")
+                icon = ICONS.get(last_state, "[?]")
 
                 print(
                     f"{icon} UDP #{udp_count:>3} | "
                     f"state={last_state:<13} | "
                     f"blink={pkt['blink_rate']:>5}/min | "
                     f"eye={pkt['eye_closure_duration']:.3f}s | "
-                    f"tilt={pkt['head_tilt_angle']:>4}° | "
-                    f"react={pkt['reaction_delay']}ms"
+                    f"tilt={pkt['head_tilt_angle']:>4}deg | "
+                    f"react={pkt['reaction_delay']}ms | "
+                    f"gaze_down={pkt['gaze_down']} | "
+                    f"phone={pkt['phone_distraction']}"
                 )
 
             except Exception as e:
-                print(f"❌ UDP hatası: {e}")
+                print(f"UDP error: {e}")
 
-        # ── Görselleştir ──────────────────────────────────────────
+        # ── Visualize ─────────────────────────────────────────────
         draw_info(frame, blink_count, blink_rate,
                   closure_dur, head_tilt, eyes_detected,
                   udp_count, last_state, last_risk)
@@ -397,12 +424,12 @@ def main():
 
     elapsed = time.time() - detector.start_time
     print(f"\n{'='*50}")
-    print(f"📊 Oturum özeti:")
-    print(f"   Süre            : {round(elapsed, 1)}s")
-    print(f"   Toplam blink    : {detector.blink_count}")
-    print(f"   UDP gönderilen  : {udp_count}")
+    print(f"Session summary:")
+    print(f"   Duration        : {round(elapsed, 1)}s")
+    print(f"   Total blinks    : {detector.blink_count}")
+    print(f"   UDP sent        : {udp_count}")
     print(f"{'='*50}")
-    print("✅ Detector kapatıldı.")
+    print("Detector closed.")
 
 
 if __name__ == "__main__":

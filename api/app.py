@@ -46,12 +46,13 @@ def score_reaction_delay(delay_ms):
 
 def calculate_drowsiness_score(data):
     """Combine all sensor scores into a final 0-100 score."""
-    s_blink   = score_blink_rate(data['blink_rate'])        * 0.25
-    s_eye     = score_eye_closure(data['eye_closure_duration']) * 0.30
-    s_tilt    = score_head_tilt(data['head_tilt_angle'])    * 0.25
-    s_react   = score_reaction_delay(data['reaction_delay']) * 0.20
+    s_blink   = score_blink_rate(data['blink_rate'])            * 0.20
+    s_eye     = score_eye_closure(data['eye_closure_duration']) * 0.24
+    s_tilt    = score_head_tilt(data['head_tilt_angle'])        * 0.20
+    s_react   = score_reaction_delay(data['reaction_delay'])    * 0.16
+    s_phone   = data.get('phone_risk_score', 0.0)               * 0.20
 
-    total = (s_blink + s_eye + s_tilt + s_react) * 100
+    total = (s_blink + s_eye + s_tilt + s_react + s_phone) * 100
     return round(total, 1)
 
 def get_risk_level(score):
@@ -173,6 +174,7 @@ def grafana_search():
         'eye_closure_duration',
         'head_tilt_angle',
         'reaction_delay'
+        'phone_risk_score'
     ]), 200
     
 @app.route('/metrics', methods=['POST', 'GET'])
@@ -184,6 +186,7 @@ def grafana_metrics():
         'eye_closure_duration',
         'head_tilt_angle',
         'reaction_delay'
+        'phone_risk_score'
     ]), 200
 
 @app.route('/grafana/query', methods=['POST'])
@@ -202,6 +205,7 @@ def grafana_query():
         'eye_closure_duration': 'eye_closure_duration',
         'head_tilt_angle':      'head_tilt_angle',
         'reaction_delay':       'reaction_delay',
+        'phone_risk_score':     'phone_risk_score',
     }
 
     result = []
