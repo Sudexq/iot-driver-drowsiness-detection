@@ -10,6 +10,7 @@ from ai.detector import extract_features, train_model, predict, load_readings as
 import numpy as np
 
 from alerts.alert_manager import evaluate_reading, trigger_alert, load_alerts as load_alert_list
+from security.auth import require_api_key
 
 app = Flask(__name__)
 DATA_FILE = "data/readings.json"
@@ -93,7 +94,7 @@ def health():
     }), 200
 
 @app.route('/sensor-data', methods=['POST'])
-@app.route('/sensor-data', methods=['POST'])
+@require_api_key
 def receive_data():
     data = request.get_json()
     data['timestamp'] = datetime.now(timezone.utc).isoformat()
@@ -127,6 +128,7 @@ def receive_data():
     }), 200
 
 @app.route('/readings', methods=['GET'])
+@require_api_key
 def get_readings():
     readings = load_readings()
     limit = request.args.get('limit', default=None, type=int)
@@ -135,6 +137,7 @@ def get_readings():
     return jsonify({"total": len(readings), "readings": readings}), 200
 
 @app.route('/readings/summary', methods=['GET'])
+@require_api_key
 def get_summary():
     readings = load_readings()
     if not readings:
@@ -162,6 +165,7 @@ def grafana_health():
     return '', 200
 
 @app.route('/grafana/search', methods=['POST'])
+@require_api_key
 def grafana_search():
     return jsonify([
         'drowsiness_score',
@@ -172,6 +176,7 @@ def grafana_search():
     ]), 200
     
 @app.route('/metrics', methods=['POST', 'GET'])
+@require_api_key
 def grafana_metrics():
     return jsonify([
         'drowsiness_score',
@@ -182,6 +187,7 @@ def grafana_metrics():
     ]), 200
 
 @app.route('/grafana/query', methods=['POST'])
+@require_api_key
 def grafana_query():
     readings = load_readings()
     if not readings:
@@ -216,10 +222,12 @@ def grafana_query():
     return jsonify(result), 200
 
 @app.route('/query', methods=['POST'])
+@require_api_key
 def grafana_query_alias():
     return grafana_query()
     
 @app.route('/ai/analyze', methods=['GET'])
+@require_api_key
 def ai_analyze():
     """Train model on all data and return anomaly analysis."""
     readings = load_readings()
@@ -253,6 +261,7 @@ def ai_analyze():
     }), 200
     
 @app.route('/alerts', methods=['GET'])
+@require_api_key
 def get_alerts():
     alerts = load_alert_list()
     limit = request.args.get('limit', default=None, type=int)
@@ -264,6 +273,7 @@ def get_alerts():
     }), 200
 
 @app.route('/alerts/latest', methods=['GET'])
+@require_api_key
 def latest_alert():
     alerts = load_alert_list()
     if not alerts:

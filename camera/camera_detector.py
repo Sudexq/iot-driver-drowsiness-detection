@@ -3,8 +3,17 @@ import numpy as np
 import time
 import socket
 import json
+import sys
+import os
 from collections import deque
 from datetime import datetime, timezone
+
+# Proje kökünü PYTHONPATH'e ekle (security modülünü import edebilmek için)
+sys.path.insert(0, os.path.abspath(os.path.join(os.path.dirname(__file__), '..')))
+from security.crypto import sign_payload, get_secret
+
+# HMAC secret'i bir kez yükle
+HMAC_SECRET = get_secret()
 
 print("📷 Camera Drowsiness Detector — Final Version")
 print("=" * 50)
@@ -86,7 +95,9 @@ def send_udp_packet(blink_rate, eye_closure_duration,
         "sent_at":              datetime.now(timezone.utc).isoformat()
     }
 
-    data = json.dumps(payload).encode("utf-8")
+    # HMAC ile imzala — pipeline'ın diğer tarafı (udp_bridge) doğrulayacak
+    envelope = sign_payload(payload, secret=HMAC_SECRET)
+    data = json.dumps(envelope).encode("utf-8")
     udp_sock.sendto(data, (UDP_IP, UDP_PORT))
     return payload
 
@@ -256,7 +267,7 @@ def draw_closure_bar(frame, closure_dur):
 # ── Main ──────────────────────────────────────────────────────────
 
 def main():
-    cap      = cv2.VideoCapture(0)
+    cap      = cv2.VideoCapture(1)
     detector = DrowsinessDetector()
 
     print(f"\n🌐 UDP Hedef     : {UDP_IP}:{UDP_PORT}")

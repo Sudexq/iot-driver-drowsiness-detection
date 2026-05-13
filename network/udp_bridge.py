@@ -1,18 +1,33 @@
 import socket
 import json
+import sys
+import os
 import requests
 from datetime import datetime, timezone
+
+# Proje kökünü PYTHONPATH'e ekle (security modülünü import edebilmek için)
+sys.path.insert(0, os.path.abspath(os.path.join(os.path.dirname(__file__), '..')))
+from security.crypto import verify_envelope, get_secret
+from security.auth import get_api_key
 
 # ── Config ────────────────────────────────────────────────────────
 UDP_LISTEN_IP   = "0.0.0.0"
 UDP_LISTEN_PORT = 9999
 FLASK_API_URL   = "http://127.0.0.1:5000/sensor-data"
 
+# HMAC secret'i bir kez yükle — her pakette tekrar okumayalım
+HMAC_SECRET = get_secret()
+
+# Flask API'ye giden her isteğe eklenen kimlik header'ı
+API_KEY = get_api_key()
+API_HEADERS = {"X-API-Key": API_KEY}
+
 # ── Stats ─────────────────────────────────────────────────────────
 stats = {
     "received": 0,
     "forwarded": 0,
     "failed": 0,
+    "rejected_hmac": 0,  # HMAC doğrulaması fail olanlar
     "latencies": []
 }
 
@@ -37,8 +52,17 @@ while True:
         data, addr = sock.recvfrom(4096)
         stats["received"] += 1
 
-        # Decode JSON payload
-        reading = json.loads(data.decode("utf-8"))
+        # Decode JSON envelope (HMAC zarfı: {payload, sig})
+        envelope = json.loads(data.decode("utf-8"))
+
+        # ── HMAC doğrula ─────────────────────────────────────────
+        # Bu adım, sahte/değiştirilmiş paketleri kabul etmeden düşürür.
+        try:
+            reading = verify_envelope(envelope, secret=HMAC_SECRET)
+        except ValueError as ve:
+            stats["rejected_hmac"] += 1
+            print(f"🚫 HMAC reject from {addr[0]}:{addr[1]} — {ve}")
+            continue
 
         # Measure latency
         latency = compute_latency(reading.get("sent_at", ""))
@@ -50,8 +74,13 @@ while True:
         else:
             avg_latency = "N/A"
 
-        # Forward to Flask API
-        response = requests.post(FLASK_API_URL, json=reading, timeout=3)
+        # Forward to Flask API (X-API-Key header'ı ile)
+        response = requests.post(
+            FLASK_API_URL,
+            json=reading,
+            headers=API_HEADERS,
+            timeout=3
+        )
         stats["forwarded"] += 1
 
         print(f"📦 [{stats['received']}] from {addr[0]}:{addr[1]} "

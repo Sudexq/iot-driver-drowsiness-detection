@@ -1,16 +1,25 @@
 import socket
 import json
 import random
+import sys
+import os
 import time
 import threading
 import requests
 from datetime import datetime, timezone
+
+# Proje kökünü PYTHONPATH'e ekle (security modülünü import edebilmek için)
+sys.path.insert(0, os.path.abspath(os.path.join(os.path.dirname(__file__), '..')))
+from security.crypto import sign_payload, get_secret
 
 # ── Config ────────────────────────────────────────────────────────
 UDP_IP        = "127.0.0.1"
 UDP_PORT      = 9999
 FLASK_API_URL = "http://127.0.0.1:5000/sensor-data"
 DRIVER_ID     = "driver_001"
+
+# HMAC secret'i bir kez yükle — deneyler de meşru gönderici gibi imzalamak zorunda
+HMAC_SECRET = get_secret()
 
 # ── Helpers ───────────────────────────────────────────────────────
 
@@ -37,7 +46,9 @@ def make_alert_reading():
     }
 
 def send_udp(sock, reading):
-    payload = json.dumps(reading).encode("utf-8")
+    # HMAC ile imzala — bridge meşru gönderici olarak görür
+    envelope = sign_payload(reading, secret=HMAC_SECRET)
+    payload = json.dumps(envelope).encode("utf-8")
     sock.sendto(payload, (UDP_IP, UDP_PORT))
     return len(payload)
 

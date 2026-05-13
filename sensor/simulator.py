@@ -1,14 +1,23 @@
 import socket
 import json
 import random
+import sys
+import os
 import time
 from datetime import datetime, timezone
+
+# Proje kökünü PYTHONPATH'e ekle (security modülünü import edebilmek için)
+sys.path.insert(0, os.path.abspath(os.path.join(os.path.dirname(__file__), '..')))
+from security.crypto import sign_payload, get_secret
 
 # ── Config ────────────────────────────────────────────────────────
 UDP_IP   = "127.0.0.1"
 UDP_PORT = 9999
 DRIVER_ID = "driver_001"
 SEND_INTERVAL = 2.0  # seconds
+
+# HMAC secret'i bir kez yükle — her pakette tekrar okumayalım
+HMAC_SECRET = get_secret()
 
 sock = socket.socket(socket.AF_INET, socket.SOCK_DGRAM)
 
@@ -65,7 +74,10 @@ while True:
     # Add send timestamp for latency measurement
     reading["sent_at"] = datetime.now(timezone.utc).isoformat()
 
-    payload = json.dumps(reading).encode("utf-8")
+    # ── HMAC imzala ───────────────────────────────────────────────
+    # Payload'ı {payload, sig} zarfına sar — bridge bu imzayı doğrulayacak.
+    envelope = sign_payload(reading, secret=HMAC_SECRET)
+    payload = json.dumps(envelope).encode("utf-8")
 
     try:
         sock.sendto(payload, (UDP_IP, UDP_PORT))
