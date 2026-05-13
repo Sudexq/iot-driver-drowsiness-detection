@@ -1,18 +1,32 @@
 import cv2
 
 print("📷 Webcam test başlıyor...")
-print("   Çıkmak için 'q' tuşuna bas.\n")
+print("   0, 1, 2 indexleri deneniyor...\n")
 
-# 0 = varsayılan webcam
-# Çalışmazsa 1 veya 2 dene
-cap = cv2.VideoCapture(0)
+# Çalışan kamera indexini otomatik bul
+cap = None
+found_index = -1
+for idx in range(3):
+    _c = cv2.VideoCapture(idx)
+    if _c.isOpened():
+        ret, _f = _c.read()
+        if ret:
+            cap = _c
+            found_index = idx
+            print(f"✅ Kamera bulundu: index {idx}")
+            break
+        _c.release()
+    else:
+        _c.release()
+        print(f"   Index {idx}: açılamadı")
 
-if not cap.isOpened():
-    print("❌ Webcam açılamadı!")
-    print("   Çözüm önerileri:")
-    print("   1. Başka bir program webcam'i kullanıyor olabilir")
-    print("   2. cv2.VideoCapture(1) veya (2) dene")
-    print("   3. Windows'ta Kamera izinlerini kontrol et")
+if cap is None:
+    print("\n❌ Hiçbir kamera bulunamadı!")
+    print("   Olası nedenler:")
+    print("   1. Teams, Zoom veya başka bir uygulama kamerayı kullanıyor → kapat")
+    print("   2. Windows Ayarları → Gizlilik → Kamera → Python'a izin ver")
+    print("   3. Harici webcam takılı değil")
+    print("\n   Kamera düzelince tekrar dene: python camera/test_webcam.py")
     exit(1)
 
 # Webcam özellikleri
@@ -20,9 +34,9 @@ width  = cap.get(cv2.CAP_PROP_FRAME_WIDTH)
 height = cap.get(cv2.CAP_PROP_FRAME_HEIGHT)
 fps    = cap.get(cv2.CAP_PROP_FPS)
 
-print(f"✅ Webcam açıldı!")
 print(f"   Çözünürlük : {int(width)}x{int(height)}")
-print(f"   FPS        : {fps}\n")
+print(f"   FPS        : {fps}")
+print(f"\n   Pencereyi kapat veya 'q' tuşuna bas.\n")
 
 frame_count = 0
 
@@ -64,4 +78,5 @@ cap.release()
 cv2.destroyAllWindows()
 
 print(f"\n✅ Test tamamlandı — {frame_count} frame okundu.")
-print("   Webcam çalışıyor, Step 2'ye geçebiliriz!")
+print(f"   Webcam index {found_index} çalışıyor.")
+print(f"   camera_detector.py'yi çalıştırabilirsin: python camera/camera_detector.py")

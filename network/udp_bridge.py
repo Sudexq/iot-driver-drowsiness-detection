@@ -9,6 +9,7 @@ from datetime import datetime, timezone
 sys.path.insert(0, os.path.abspath(os.path.join(os.path.dirname(__file__), '..')))
 from security.crypto import verify_envelope, get_secret
 from security.auth import get_api_key
+from security.replay_guard import check_replay
 
 # ── Config ────────────────────────────────────────────────────────
 UDP_LISTEN_IP   = "0.0.0.0"
@@ -27,7 +28,8 @@ stats = {
     "received": 0,
     "forwarded": 0,
     "failed": 0,
-    "rejected_hmac": 0,  # HMAC doğrulaması fail olanlar
+    "rejected_hmac": 0,    # HMAC doğrulaması fail olanlar
+    "rejected_replay": 0,  # Replay / eski timestamp nedeniyle reddedilenler
     "latencies": []
 }
 
@@ -62,6 +64,16 @@ while True:
         except ValueError as ve:
             stats["rejected_hmac"] += 1
             print(f"🚫 HMAC reject from {addr[0]}:{addr[1]} — {ve}")
+            continue
+
+        # ── Replay attack kontrolü ────────────────────────────────
+        # HMAC geçerli olsa bile aynı paket tekrar gönderilebilir.
+        # check_replay: eski timestamp veya tekrar eden nonce → ValueError
+        try:
+            check_replay(reading)
+        except ValueError as ve:
+            stats["rejected_replay"] += 1
+            print(f"🔁 Replay reject from {addr[0]}:{addr[1]} — {ve}")
             continue
 
         # Measure latency

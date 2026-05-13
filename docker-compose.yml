@@ -1,0 +1,67 @@
+version: "3.8"
+
+# IoT Driver Drowsiness Detection — Docker Compose
+#
+# Başlatma:
+#   docker-compose up -d
+#
+# Durdurma:
+#   docker-compose down
+#
+# Gereksinimler:
+#   .env dosyasında şu değerlerin dolu olması gerekir:
+#     GRAFANA_ADMIN_USER
+#     GRAFANA_ADMIN_PASSWORD
+
+services:
+
+  # ── Flask API ──────────────────────────────────────────────────
+  flask_api:
+    build:
+      context: .
+      dockerfile: Dockerfile
+    container_name: iot_flask_api
+    ports:
+      - "5000:5000"
+    environment:
+      - IOT_HMAC_SECRET=${IOT_HMAC_SECRET}
+      - IOT_API_KEY=${IOT_API_KEY}
+      - READINGS_ENCRYPT=${READINGS_ENCRYPT:-false}
+      - READINGS_ENCRYPT_KEY=${READINGS_ENCRYPT_KEY:-}
+    volumes:
+      - ./data:/app/data
+    restart: unless-stopped
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://localhost:5000/health"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+
+  # ── Grafana ────────────────────────────────────────────────────
+  grafana:
+    image: grafana/grafana:latest
+    container_name: iot_grafana
+    ports:
+      - "3000:3000"
+    environment:
+      # Default admin/admin KULLANILMIYOR — .env'den okunuyor
+      - GF_SECURITY_ADMIN_USER=${GRAFANA_ADMIN_USER}
+      - GF_SECURITY_ADMIN_PASSWORD=${GRAFANA_ADMIN_PASSWORD}
+      # Dış kayıtları kapat
+      - GF_USERS_ALLOW_SIGN_UP=false
+      # Anonim erişimi kapat
+      - GF_AUTH_ANONYMOUS_ENABLED=false
+      # Grafana sürüm güncellemelerini gizle (production için)
+      - GF_ANALYTICS_REPORTING_ENABLED=false
+      - GF_ANALYTICS_CHECK_FOR_UPDATES=false
+    volumes:
+      - grafana_data:/var/lib/grafana
+      - ./grafana/provisioning:/etc/grafana/provisioning
+      - ./grafana/grafana.ini:/etc/grafana/grafana.ini
+    restart: unless-stopped
+    depends_on:
+      - flask_api
+
+volumes:
+  grafana_data:
+    driver: local

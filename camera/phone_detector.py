@@ -32,10 +32,15 @@ import numpy as np
 
 try:
     import mediapipe as mp
+    # mediapipe 0.10+ sürümlerinde mp.solutions kaldırıldı — kontrol et
+    if not hasattr(mp, "solutions"):
+        raise ImportError("Bu mediapipe sürümü mp.solutions desteklemiyor (0.10+ uyumsuz)")
     MP_AVAILABLE = True
-except ImportError:
+except ImportError as _mp_err:
     MP_AVAILABLE = False
-    print("⚠️  mediapipe bulunamadi. pip install mediapipe --break-system-packages")
+    print(f"⚠️  mediapipe kullanılamıyor: {_mp_err}")
+    print("   Telefon tespiti devre dışı (kamera diğer özelliklerle çalışmaya devam eder)")
+    print("   Uyumlu sürüm için: pip install mediapipe==0.10.9")
 
 
 # ── Eslikleri ────────────────────────────────────────────────────

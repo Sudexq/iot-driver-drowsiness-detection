@@ -11,6 +11,8 @@ import numpy as np
 
 from alerts.alert_manager import evaluate_reading, trigger_alert, load_alerts as load_alert_list
 from security.auth import require_api_key
+from security.validators import validate_sensor_reading
+from security.file_guard import save_data, load_data
 
 app = Flask(__name__)
 DATA_FILE = "data/readings.json"
@@ -64,24 +66,16 @@ def get_risk_level(score):
         return "danger"
 
 # ── File helpers ──────────────────────────────────────────────────
+# file_guard: dosya izni kısıtlaması (chmod 600) + opsiyonel Fernet şifreleme.
+# READINGS_ENCRYPT=true ise veriler .env'deki READINGS_ENCRYPT_KEY ile şifrelenir.
 
 def load_readings():
-    if os.path.exists(DATA_FILE):
-        with open(DATA_FILE, "r") as f:
-            content = f.read().strip()
-            if content:
-                try:
-                    return json.loads(content)
-                except json.JSONDecodeError:
-                    print("⚠️  readings.json corrupted, resetting...")
-                    return []
-    return []
+    return load_data(DATA_FILE)
 
 def save_reading(data):
     readings = load_readings()
     readings.append(data)
-    with open(DATA_FILE, "w") as f:
-        json.dump(readings, f, indent=2)
+    save_data(DATA_FILE, readings)
 
 # ── Endpoints ─────────────────────────────────────────────────────
 
@@ -97,7 +91,13 @@ def health():
 @app.route('/sensor-data', methods=['POST'])
 @require_api_key
 def receive_data():
-    data = request.get_json()
+    # ── Input validation (Pydantic) ───────────────────────────────
+    # Eksik alan, yanlış tip veya sınır dışı değer → 422 + açıklayıcı hata
+    # Uygulama crash olmaz, saldırgan sahte değer giremez
+    data, validation_error = validate_sensor_reading(request.get_json())
+    if validation_error:
+        return validation_error
+
     data['timestamp'] = datetime.now(timezone.utc).isoformat()
     data['drowsiness_score'] = calculate_drowsiness_score(data)
     data['risk_level']       = get_risk_level(data['drowsiness_score'])

@@ -4,6 +4,7 @@ import random
 import sys
 import os
 import time
+import uuid
 from datetime import datetime, timezone
 
 # Proje kökünü PYTHONPATH'e ekle (security modülünü import edebilmek için)
@@ -71,7 +72,11 @@ while True:
     state_label, generator = SCENARIO[cycle % len(SCENARIO)]
     reading = generator()
 
-    # Add send timestamp for latency measurement
+    # Replay attack koruması için nonce (UUID4) ve timestamp ekle
+    # Bridge tarafında replay_guard bu iki alanı kontrol ediyor:
+    #   - nonce: her pakette farklı → aynı paket tekrar gönderilemez
+    #   - sent_at: şimdiki zaman → eski paket replay'i önler
+    reading["nonce"]   = str(uuid.uuid4())
     reading["sent_at"] = datetime.now(timezone.utc).isoformat()
 
     # ── HMAC imzala ───────────────────────────────────────────────

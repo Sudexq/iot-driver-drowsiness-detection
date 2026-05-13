@@ -266,10 +266,56 @@ def draw_closure_bar(frame, closure_dur):
 # ── Main ──────────────────────────────────────────────────────────
 
 def main():
-    cap       = cv2.VideoCapture(0)
-    detector  = DrowsinessDetector()
-    phone_det = PhoneDetector()
-    gaze_det  = GazeDetector()
+    # Kamerayı bul — önce 1, sonra 0 ve 2'yi dene (test_webcam index 1 buldu)
+    cap = None
+    for cam_index in [1, 0, 2]:
+        _cap = cv2.VideoCapture(cam_index)
+        if _cap.isOpened():
+            ret, _test = _cap.read()
+            if ret:
+                cap = _cap
+                print(f"✅ Kamera bulundu: index {cam_index}")
+                break
+            _cap.release()
+        else:
+            _cap.release()
+
+    if cap is None:
+        print("❌ Hiçbir kamera açılamadı (index 0, 1, 2 denendi).")
+        print("   Olası nedenler:")
+        print("   - Webcam takılı değil veya başka uygulama kullanıyor (Teams, Zoom, vb.)")
+        print("   - Windows Gizlilik Ayarları → Kamera → bu uygulamaya izin ver")
+        print("   - Harici kamera için USB bağlantısını kontrol edin")
+        print()
+        print("   Simülatör ile devam etmek için:")
+        print("   python sensor/simulator.py")
+        return
+
+    detector = DrowsinessDetector()
+
+    # PhoneDetector ve GazeDetector mediapipe gerektirir.
+    # mediapipe uyumsuzsa (0.10+ sürümleri mp.solutions kaldırdı) uyarı verir
+    # ve devre dışı kalır — kamera temel uyuşukluk tespiti ile çalışmaya devam eder.
+    try:
+        phone_det = PhoneDetector()
+    except Exception as e:
+        print(f"⚠️  PhoneDetector başlatılamadı: {e}")
+        print("   Telefon tespiti devre dışı.")
+        from camera.phone_detector import PhoneDetector as _PD
+        phone_det = type("_FallbackPhone", (), {
+            "update": lambda self, frame: {"distraction": False, "risk_score": 0.0, "detail": "devre dışı"},
+            "draw_status": lambda self, frame, result: None,
+        })()
+
+    try:
+        gaze_det = GazeDetector()
+    except Exception as e:
+        print(f"⚠️  GazeDetector başlatılamadı: {e}")
+        print("   Göz takibi devre dışı.")
+        gaze_det = type("_FallbackGaze", (), {
+            "update": lambda self, frame: {"gaze_down": False, "gaze_score": 0.0, "gaze_down_secs": 0.0, "detail": "devre dışı"},
+            "draw_overlay": lambda self, frame, result: None,
+        })()
 
     last_phone_result = {"distraction": False, "risk_score": 0.0, "detail": "starting"}
     last_gaze_result  = {"gaze_down": False, "gaze_score": 0.0, "gaze_down_secs": 0.0, "detail": "starting"}
