@@ -7,15 +7,15 @@ try:
 except ImportError:
     WINDOWS = False
 
-# Şu an hangi alarm çalıyor?
-# None = sessiz, "drowsiness" = uyuşukluk, "distraction" = telefon/gaze
+# Currently active alarm.
+# None = silent, "drowsiness" = drowsiness alarm, "distraction" = phone/gaze alarm
 _active_alarm = None
 _alarm_lock   = threading.Lock()
 _alarm_thread = None
 
 
 def _beep_loop(alarm_type):
-    """Arka planda sürekli bip sesi çalar."""
+    """Plays a continuous beep in the background."""
     global _active_alarm
     while True:
         with _alarm_lock:
@@ -23,39 +23,39 @@ def _beep_loop(alarm_type):
                 break
         if WINDOWS:
             if alarm_type == "drowsiness":
-                winsound.Beep(800, 400)   # 800 Hz, 0.4 sn — uzun tehlikeli ses
+                winsound.Beep(800, 400)   # 800 Hz, 0.4s — long danger tone
                 time.sleep(0.3)
             else:
-                winsound.Beep(1200, 200)  # 1200 Hz, 0.2 sn — kısa dikkat sesi
+                winsound.Beep(1200, 200)  # 1200 Hz, 0.2s — short attention tone
                 time.sleep(0.5)
         else:
-            print(f"\a")  # Mac/Linux terminal zili
+            print("\a")  # Mac/Linux terminal bell
             time.sleep(1)
 
 
 def play_alarm(alarm_type):
     """
-    alarm_type: "drowsiness" veya "distraction"
+    alarm_type: "drowsiness" or "distraction"
 
-    Kural:
-    - drowsiness alarmı aktifse distraction alarmı ÇALMA
-    - drowsiness yoksa distraction çalabilir
-    - aynı alarm zaten çalıyorsa tekrar başlatma
+    Rules:
+    - If drowsiness alarm is active, distraction alarm is BLOCKED
+    - If no drowsiness alarm, distraction alarm can play
+    - If the same alarm is already playing, do not restart it
     """
     global _active_alarm, _alarm_thread
 
     with _alarm_lock:
-        # Uyuşukluk çalıyorsa dikkat dağınıklığı alarmını engelle
+        # Block distraction alarm if drowsiness is already playing
         if _active_alarm == "drowsiness" and alarm_type == "distraction":
             return
 
-        # Zaten aynı alarm çalıyorsa tekrar başlatma
+        # Same alarm already playing — do nothing
         if _active_alarm == alarm_type:
             return
 
         _active_alarm = alarm_type
 
-    # Eski thread bitene kadar bekle, yenisini başlat
+    # Wait for old thread to finish, then start new one
     if _alarm_thread and _alarm_thread.is_alive():
         _alarm_thread.join(timeout=1)
 
@@ -67,8 +67,8 @@ def play_alarm(alarm_type):
 
 def stop_alarm(alarm_type=None):
     """
-    alarm_type verilirse sadece o alarm durdurulur.
-    None verilirse her alarm durdurulur.
+    If alarm_type is given, only that alarm is stopped.
+    If None, all alarms are stopped.
     """
     global _active_alarm
     with _alarm_lock:
@@ -77,7 +77,7 @@ def stop_alarm(alarm_type=None):
 
 
 def is_alarm_active(alarm_type=None):
-    """Belirtilen alarm (veya herhangi bir alarm) çalıyor mu?"""
+    """Returns True if the specified alarm (or any alarm) is currently playing."""
     with _alarm_lock:
         if alarm_type is None:
             return _active_alarm is not None
