@@ -19,12 +19,13 @@ experiments (packet loss, latency, burst traffic) are included and analyzed with
 
 ## 🧠 Key Features
 
-- **Dual input modes** — live webcam (OpenCV) or synthetic simulator, plug-and-play interchangeable
+- **Dual input modes** — live webcam (Dlib EAR) or synthetic simulator, plug-and-play interchangeable
 - **UDP-based IoT transport** — real network datagrams, visible in Wireshark
+- **HMAC-SHA256 security** — every packet is signed; replay attacks are blocked by nonce guard
 - **Flask backend API** — receives, scores, and stores every reading
 - **Rule-based drowsiness scoring** — transparent, explainable 0–100 score
 - **Isolation Forest** — unsupervised anomaly detection (no labels required)
-- **Real-time alert system** — triggers on score threshold or AI anomaly flag
+- **Real-time alert system** — triggers on score threshold or AI anomaly flag, with audio alarm
 - **Grafana dashboard** — live visualization of all sensor metrics
 - **Network experiments** — packet loss, latency, burst traffic with measured results
 - **Wireshark traffic analysis** — UDP packet capture and protocol inspection
@@ -41,14 +42,16 @@ experiments (packet loss, latency, burst traffic) are included and analyzed with
 │      OR                                     │
 │  [Synthetic]  →  sensor/simulator.py        │
 └─────────────────┬───────────────────────────┘
-                  │ UDP  port 9999
+                  │ UDP port 9999
+                  │ + HMAC-SHA256 signature
                   ▼
 ┌─────────────────────────────────────────────┐
 │           network/udp_bridge.py             │
-│   Listens on UDP · decodes JSON · measures  │
-│   latency · forwards via HTTP POST          │
+│   Verifies HMAC · blocks replay attacks     │
+│   Measures latency · forwards via HTTP POST │
 └─────────────────┬───────────────────────────┘
-                  │ HTTP POST  port 5000
+                  │ HTTP POST port 5000
+                  │ + API Key header
                   ▼
 ┌─────────────────────────────────────────────┐
 │              api/app.py                     │
@@ -61,27 +64,40 @@ experiments (packet loss, latency, burst traffic) are included and analyzed with
        ▼                      ▼
 ┌─────────────┐     ┌──────────────────────────┐
 │alert_manager│     │      Grafana             │
-│alerts.json  │     │  Live dashboard          │
-└─────────────┘     └──────────────────────────┘
+│alerts.json  │     │  Live dashboard (5s)     │
+│sound_alert  │     └──────────────────────────┘
+└─────────────┘
 ```
 
 ---
 
-## 📷 Camera-Based Input Module
+## 📷 Camera-Based Detection (Dlib EAR)
 
 ### `camera/camera_detector.py`
 
-Opens the PC webcam, detects the driver's face and eyes using OpenCV Haar Cascade
-classifiers, and computes three drowsiness indicators from live video frames.
+Opens the webcam and detects drowsiness using the **Eye Aspect Ratio (EAR)** algorithm
+with Dlib's 68-point facial landmark model. EAR drops sharply when eyes close —
+this is more reliable than Haar Cascade eye detection.
 
-#### What it measures
+#### What it detects
 
-| Field | Method | Normal range |
+| Signal | Method | Alert threshold |
 |---|---|---|
-| `blink_rate` | Eye disappearance events per minute (60 s rolling window) | 12–20 /min |
-| `eye_closure_duration` | Time from eyes closing to reopening | 0.10–0.25 s |
-| `head_tilt_angle` | Lateral deviation of face center from frame center | 0–10 degrees |
-| `reaction_delay` | Fixed baseline reference value | 250 ms |
+| Eye closure | Dlib EAR (68 landmarks) | EAR < 0.15 for > 2s |
+| Blink rate | Rolling 60s window | < 6 or > 30 /min |
+| Head tilt (horizontal) | Eye corner angle | > 15° for > 4s |
+| Head tilt (forward) | Nose–chin distance ratio | Normalised drop |
+| Both hands raised | Skin contour detection | 2 contours UP > 1.5s |
+
+#### Calibration
+
+Run before first use to find your personal EAR threshold:
+
+```bash
+python camera/calibrate_ear.py
+```
+
+Default threshold: `EAR_THRESHOLD = 0.15`
 
 #### UDP output — every 1 second
 
@@ -92,25 +108,32 @@ classifiers, and computes three drowsiness indicators from live video frames.
   "blink_rate":           17.2,
   "eye_closure_duration": 0.142,
   "head_tilt_angle":      3.1,
+  "head_tilt_duration":   0.0,
   "reaction_delay":       250.0,
   "source":               "camera",
-  "sent_at":              "2026-05-07T14:33:54+00:00"
+  "nonce":                "a3f2c1d4-...",
+  "sent_at":              "2026-05-18T14:33:54+00:00"
 }
 ```
 
-The JSON structure is identical to `sensor/simulator.py`. The existing UDP bridge,
-Flask API, AI model, alert system, and Grafana dashboard require no changes.
+---
 
-#### Why OpenCV Haar Cascades instead of a custom-trained model
+## 🔒 Security Layer
 
-Our task is **feature extraction**, not image classification. The goal is to obtain
-numerical behavioral metrics from video — not to label images. Haar Cascades are
-purpose-built for locating facial regions efficiently on CPU at 30 fps, with no GPU
-required. Training a custom CNN from scratch would require tens of thousands of labeled
-images and significant compute — effort that would not improve the core IoT system.
-In production IoT systems (Bosch DMS, Seeing Machines, Mobileye), pre-trained
-perception models are always used for this layer. Our novelty is the end-to-end
-pipeline and the dual-layer AI detection — not face detection itself.
+Every UDP packet is protected by three mechanisms:
+
+| Mechanism | Implementation | Purpose |
+|---|---|---|
+| HMAC-SHA256 | `security/crypto.py` | Integrity + authenticity |
+| Nonce | UUID4 per packet | Replay attack prevention |
+| API Key | `security/auth.py` | Flask endpoint access control |
+
+Secrets are stored in `.env` (never committed to git):
+
+```
+IOT_HMAC_SECRET=<strong-random-value>
+IOT_API_KEY=<strong-random-value>
+```
 
 ---
 
@@ -118,9 +141,10 @@ pipeline and the dual-layer AI detection — not face detection itself.
 
 | Field | Description | Alert range | Drowsy range |
 |---|---|---|---|
-| `blink_rate` | Blinks per minute | 15–20 | below 8 |
-| `eye_closure_duration` | Eye closed duration in seconds | 0.10–0.20 s | above 0.50 s |
-| `head_tilt_angle` | Head angle in degrees | 0–10° | above 20° |
+| `blink_rate` | Blinks per minute | 15–20 | below 6 |
+| `eye_closure_duration` | Eye closed duration in seconds | 0.10–0.40 s | above 2.0 s |
+| `head_tilt_angle` | Head angle in degrees | 0–15° | above 25° |
+| `head_tilt_duration` | Seconds head has been tilted | 0 s | above 4 s |
 | `reaction_delay` | Response time in milliseconds | 150–300 ms | above 500 ms |
 
 ---
@@ -129,10 +153,11 @@ pipeline and the dual-layer AI detection — not face detection itself.
 
 ### Layer 1 — Rule-based Drowsiness Score
 
-Each sensor value is normalized to a 0–1 danger scale and combined with weights:
+Each sensor value is normalised to a 0–1 danger scale and combined with weights:
 
 ```
-score = blink × 0.25 + eye_closure × 0.30 + head_tilt × 0.25 + reaction × 0.20
+score = blink × 0.20 + eye_closure × 0.24 + head_tilt × 0.20
+      + reaction × 0.16 + phone_risk × 0.20
 ```
 
 | Score | Risk level |
@@ -147,17 +172,21 @@ Trained on the stream of incoming readings. Normal readings cluster together;
 anomalous readings are isolated and flagged. No labels required — the model learns
 what "normal" looks like and flags deviations automatically.
 
+```python
+IsolationForest(n_estimators=100, contamination=0.15, random_state=42)
+```
+
 ---
 
 ## 🚨 Alert Logic
 
 An alert is triggered when **any** of the following conditions are true:
 
-- Drowsiness score ≥ 60
-- Isolation Forest flags the reading as an anomaly
+- Drowsiness score ≥ 65
+- Isolation Forest anomaly score < -0.08
 
 Each alert is saved to `data/alerts.json` with full sensor snapshot, timestamp,
-driver ID, score, risk level, and reasons.
+driver ID, score, risk level, and reasons. An audio alarm also sounds.
 
 ---
 
@@ -166,10 +195,10 @@ driver ID, score, risk level, and reasons.
 ### Protocol — UDP
 
 UDP is used instead of TCP because:
-- Real IoT vehicle systems prioritize low latency over guaranteed delivery
-- UDP exposes packet loss and delay behavior that TCP hides automatically
+- Real IoT vehicle systems prioritise low latency over guaranteed delivery
+- UDP exposes packet loss and delay behaviour that TCP hides automatically
 - Every datagram is individually visible in Wireshark
-- Network impairment experiments (loss, delay, burst) require UDP to be meaningful
+- Network impairment experiments require UDP to be meaningful
 
 ### Network Experiments
 
@@ -179,8 +208,7 @@ UDP is used instead of TCP because:
 | Injected delay (0–500 ms) | Average, min, max latency |
 | Burst traffic (1–50 packets) | Burst duration, send rate |
 
-Results are saved to `data/reports/experiment_report.txt` and
-`data/reports/experiment_results.json`.
+Results are saved to `data/reports/`.
 
 ---
 
@@ -193,7 +221,10 @@ drowsiness_detection/
 │   └── simulator.py              # Synthetic UDP sensor (3-state cycle)
 │
 ├── camera/
-│   └── camera_detector.py        # Live webcam input via OpenCV
+│   ├── camera_detector.py        # Live webcam — Dlib EAR
+│   ├── hand_detector.py          # Both-hands-raised detection
+│   ├── calibrate_ear.py          # Personal EAR threshold calibration
+│   └── shape_predictor_68_face_landmarks.dat  # Dlib model (not in git)
 │
 ├── network/
 │   ├── udp_bridge.py             # UDP listener → Flask forwarder
@@ -207,13 +238,22 @@ drowsiness_detection/
 │   └── detector.py               # Isolation Forest anomaly detection
 │
 ├── alerts/
-│   └── alert_manager.py          # Alert evaluation and storage
+│   ├── alert_manager.py          # Alert evaluation and storage
+│   └── sound_alert.py            # Audio alarm
+│
+├── security/
+│   ├── crypto.py                 # HMAC-SHA256 sign / verify
+│   ├── auth.py                   # API key decorator
+│   ├── replay_guard.py           # Nonce-based replay protection
+│   ├── validators.py             # Input validation
+│   └── file_guard.py             # File permission guard
 │
 ├── data/
 │   ├── readings.json             # All sensor readings (persistent)
 │   ├── alerts.json               # All triggered alerts (persistent)
 │   └── reports/                  # Network experiment results
 │
+├── .env                          # Secrets (not committed)
 └── requirements.txt
 ```
 
@@ -221,22 +261,45 @@ drowsiness_detection/
 
 ## 🌐 API Endpoints
 
-| Method | Endpoint | Description |
-|---|---|---|
-| POST | `/sensor-data` | Receive a sensor reading |
-| GET | `/health` | API status + total reading count |
-| GET | `/readings` | All saved readings |
-| GET | `/readings?limit=N` | Last N readings |
-| GET | `/readings/summary` | Average score, risk distribution |
-| GET | `/ai/analyze` | Run AI analysis on last 20 readings |
-| GET | `/alerts` | All alerts |
-| GET | `/alerts/latest` | Most recent alert |
-| POST | `/metrics` | Grafana metric list |
-| POST | `/query` | Grafana time-series data |
+| Method | Endpoint | Auth | Description |
+|---|---|---|---|
+| GET | `/health` | — | API status + reading count |
+| POST | `/sensor-data` | API Key | Receive a sensor reading |
+| GET | `/readings` | API Key | All saved readings |
+| GET | `/readings?limit=N` | API Key | Last N readings |
+| GET | `/readings/summary` | API Key | Average score, risk distribution |
+| GET | `/ai/analyze` | API Key | AI analysis on last 20 readings |
+| GET | `/alerts` | API Key | All alerts |
+| GET | `/alerts/latest` | API Key | Most recent alert |
+| POST | `/metrics` | — | Grafana metric list |
+| POST | `/query` | API Key | Grafana time-series data |
 
 ---
 
 ## ▶️ How to Run
+
+### Prerequisites
+
+```bash
+pip install -r requirements.txt
+```
+
+Copy `.env.example` to `.env` and fill in secrets:
+```
+IOT_HMAC_SECRET=your-secret-here
+IOT_API_KEY=your-api-key-here
+```
+
+Download the Dlib landmark model (required for camera mode):
+```bash
+python -c "
+import urllib.request, bz2, os
+urllib.request.urlretrieve('http://dlib.net/files/shape_predictor_68_face_landmarks.dat.bz2', 'tmp.bz2')
+open('camera/shape_predictor_68_face_landmarks.dat', 'wb').write(bz2.open('tmp.bz2').read())
+os.remove('tmp.bz2')
+print('Done')
+"
+```
 
 ### Option A — Simulated sensor
 
@@ -251,7 +314,7 @@ python network/udp_bridge.py
 python sensor/simulator.py
 ```
 
-### Option B — Live camera
+### Option B — Live camera (Python 3.12 venv required)
 
 ```bash
 # Terminal 1
@@ -261,19 +324,14 @@ python api/app.py
 python network/udp_bridge.py
 
 # Terminal 3
+venv312\Scripts\activate
 python camera/camera_detector.py
 ```
 
 ### Network experiments
 
 ```bash
-# (with API and bridge already running)
 python network/experiments.py
-```
-
-### Auto-generate experiment report
-
-```bash
 python network/report_generator.py
 ```
 
@@ -281,31 +339,25 @@ python network/report_generator.py
 
 ## 📈 Grafana Dashboard
 
-Open `http://localhost:3000` after starting Grafana.
+1. Start Grafana: `net start grafana`
+2. Open `http://localhost:3000` (admin / admin)
+3. Datasource: `simpod-json-datasource` → `http://localhost:5000`
+4. Custom HTTP Header: `X-API-Key` → your `IOT_API_KEY`
 
-Panels:
-- Drowsiness Score (time series)
-- Blink Rate
-- Eye Closure Duration
-- Head Tilt Angle
-- Reaction Delay
+Panels: Drowsiness Score · Blink Rate · Eye Closure Duration · Head Tilt Angle · Reaction Delay
 
-Datasource: `simpod-json-datasource` pointed at `http://localhost:5000`
-
-Auto-refresh: set to 5s for live updates.
+Auto-refresh: 5s
 
 ---
 
 ## 🔬 Wireshark Analysis
 
-Capture filter:
 ```
 udp.port == 9999
 ```
 
-Each packet corresponds to one sensor reading. The JSON payload is visible in
-the packet details pane. Burst traffic experiments produce a visually distinct
-density spike in the packet timeline.
+Each packet is one signed sensor reading. The HMAC signature, nonce, and JSON
+payload are visible in the packet details pane.
 
 ---
 
@@ -319,12 +371,13 @@ numpy
 pandas
 joblib
 opencv-python
+dlib
+scipy
+cvzone
 ```
 
-Install:
-```bash
-pip install -r requirements.txt
-```
+> **Note:** Python 3.12 is required for the camera module.
+> The simulator and API work with Python 3.13.
 
 ---
 
@@ -333,14 +386,13 @@ pip install -r requirements.txt
 | Dimension | Simulator | Camera detector |
 |---|---|---|
 | Data source | Python random module | Live webcam (real human face) |
+| Algorithm | State machine | Dlib 68-point EAR |
 | Realism | Controlled, predictable | Real biological variance |
 | Setup | None | Webcam + good lighting |
 | Reproducibility | Fully reproducible | Varies per session |
 | Failure modes | None | Poor lighting, face occlusion |
 | UDP format | Identical JSON port 9999 | Identical JSON port 9999 |
 | Best used for | Experiments, AI training | Live demos, real-world validation |
-
-Both modes feed the same downstream pipeline without any code changes.
 
 ---
 
