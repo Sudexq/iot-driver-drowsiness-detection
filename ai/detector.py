@@ -34,7 +34,7 @@ def train_model(X):
     """
     model = IsolationForest(
         n_estimators=100,
-        contamination=0.15,
+        contamination=0.20,
         random_state=42
     )
     model.fit(X)

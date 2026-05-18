@@ -23,6 +23,9 @@ import hashlib
 import json
 import os
 
+import uuid
+from datetime import datetime, timezone
+
 
 _ENV_VAR = "IOT_HMAC_SECRET"
 
@@ -83,12 +86,24 @@ def _canonical(payload: dict) -> bytes:
 def sign_payload(payload: dict, secret: bytes | None = None) -> dict:
     """
     Verilen payload'ı HMAC-SHA256 ile imzala ve zarf (envelope) döndür.
+    Nonce ve sent_at otomatik eklenir — replay guard için zorunlu.
     """
     if secret is None:
         secret = get_secret()
+
+    # Replay guard için nonce ekle (eğer yoksa)
+    if "nonce" not in payload:
+        payload = {
+            **payload,
+            "nonce":   str(uuid.uuid4()),
+            "sent_at": payload.get(
+                "sent_at",
+                datetime.now(timezone.utc).isoformat()
+            )
+        }
+
     sig = hmac.new(secret, _canonical(payload), hashlib.sha256).hexdigest()
     return {"payload": payload, "sig": sig}
-
 
 def verify_envelope(envelope: dict, secret: bytes | None = None) -> dict:
     """

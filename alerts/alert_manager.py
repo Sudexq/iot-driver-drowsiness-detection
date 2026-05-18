@@ -5,8 +5,8 @@ from datetime import datetime, timezone
 ALERTS_FILE = "data/alerts.json"
 
 ALERT_THRESHOLDS = {
-    "drowsiness_score": 60,   # rule-based threshold
-    "anomaly": True           # AI flag
+    "drowsiness_score": 65,        # 60 → 65
+    "min_anomaly_score": -0.08     # sadece güçlü anomaliler
 }
 
 def load_alerts():
@@ -23,10 +23,6 @@ def save_alert(alert):
         json.dump(alerts, f, indent=2)
 
 def evaluate_reading(reading, ai_result):
-    """
-    Decide if this reading should trigger an alert.
-    Returns an alert dict or None.
-    """
     reasons = []
 
     if reading.get("drowsiness_score", 0) >= ALERT_THRESHOLDS["drowsiness_score"]:
@@ -34,9 +30,12 @@ def evaluate_reading(reading, ai_result):
             f"High drowsiness score: {reading['drowsiness_score']}"
         )
 
-    if ai_result.get("anomaly"):
+    anomaly_score = ai_result.get("anomaly_score", 0)
+    is_anomaly    = ai_result.get("anomaly", False)
+
+    if is_anomaly and anomaly_score < ALERT_THRESHOLDS["min_anomaly_score"]:
         reasons.append(
-            f"AI anomaly detected (score: {ai_result['anomaly_score']})"
+            f"AI anomaly detected (score: {anomaly_score})"
         )
 
     if not reasons:
@@ -61,7 +60,6 @@ def evaluate_reading(reading, ai_result):
     return alert
 
 def trigger_alert(alert):
-    """Print, save, and return the alert."""
     print("\n" + "🚨" * 20)
     print(f"  ALERT #{alert['alert_id']} — {alert['driver_id'].upper()}")
     print(f"  Time     : {alert['timestamp']}")

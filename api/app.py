@@ -2,9 +2,8 @@ from flask import Flask, request, jsonify
 from datetime import datetime, timezone
 import json
 import os
-
 import sys
-import os
+
 sys.path.insert(0, os.path.abspath(os.path.join(os.path.dirname(__file__), '..')))
 from ai.detector import extract_features, train_model, predict, load_readings as ai_load
 import numpy as np
@@ -29,16 +28,16 @@ def score_blink_rate(blink_rate):
         return min(1.0, (blink_rate - 20) / 10)
 
 def score_eye_closure(duration):
-    """Normal is ~0.15s. Longer = worse."""
-    normal = 0.15
-    max_val = 2.0
+    """Normal is 0.15-0.40s. Longer = worse."""
+    normal  = 0.40    # kısa kapanmalar normal sayılır
+    max_val = 2.5
     return min(1.0, max(0.0, (duration - normal) / (max_val - normal)))
 
 def score_head_tilt(angle):
-    """Normal is 0-10 degrees. Higher = worse."""
-    if angle <= 10:
+    """Normal is 0-15 degrees. Higher = worse."""
+    if angle <= 15:   # hafif eğim görmezden gelindi
         return 0.0
-    return min(1.0, (angle - 10) / 35)
+    return min(1.0, (angle - 15) / 30)
 
 def score_reaction_delay(delay_ms):
     """Normal is 150-300ms. Higher = worse."""
@@ -66,8 +65,6 @@ def get_risk_level(score):
         return "danger"
 
 # ── File helpers ──────────────────────────────────────────────────
-# file_guard: dosya izni kısıtlaması (chmod 600) + opsiyonel Fernet şifreleme.
-# READINGS_ENCRYPT=true ise veriler .env'deki READINGS_ENCRYPT_KEY ile şifrelenir.
 
 def load_readings():
     return load_data(DATA_FILE)
@@ -91,30 +88,25 @@ def health():
 @app.route('/sensor-data', methods=['POST'])
 @require_api_key
 def receive_data():
-    # ── Input validation (Pydantic) ───────────────────────────────
-    # Eksik alan, yanlış tip veya sınır dışı değer → 422 + açıklayıcı hata
-    # Uygulama crash olmaz, saldırgan sahte değer giremez
     data, validation_error = validate_sensor_reading(request.get_json())
     if validation_error:
         return validation_error
 
-    data['timestamp'] = datetime.now(timezone.utc).isoformat()
+    data['timestamp']        = datetime.now(timezone.utc).isoformat()
     data['drowsiness_score'] = calculate_drowsiness_score(data)
     data['risk_level']       = get_risk_level(data['drowsiness_score'])
 
     ICONS = {"alert": "🟢", "warning": "🟡", "danger": "🔴"}
-    icon = ICONS[data['risk_level']]
+    icon  = ICONS[data['risk_level']]
     print(f"\n{icon} [{data['timestamp']}]  score={data['drowsiness_score']}  risk={data['risk_level'].upper()}")
 
-    # Run AI if we have enough data
-    ai_result = {"anomaly": False, "anomaly_score": 0.0}
+    ai_result    = {"anomaly": False, "anomaly_score": 0.0}
     all_readings = load_readings()
     if len(all_readings) >= 10:
-        X = extract_features(all_readings)
+        X     = extract_features(all_readings)
         model = train_model(X)
         ai_result = predict(model, data)
 
-    # Check alert conditions
     alert = evaluate_reading(data, ai_result)
     if alert:
         trigger_alert(alert)
@@ -143,22 +135,122 @@ def get_summary():
     readings = load_readings()
     if not readings:
         return jsonify({"message": "No data yet"}), 200
-
-    scores = [r['drowsiness_score'] for r in readings if 'drowsiness_score' in r]
+    scores      = [r['drowsiness_score'] for r in readings if 'drowsiness_score' in r]
     risk_counts = {"alert": 0, "warning": 0, "danger": 0}
     for r in readings:
         level = r.get('risk_level')
         if level in risk_counts:
             risk_counts[level] += 1
-
     return jsonify({
-        "total_readings": len(readings),
-        "average_score": round(sum(scores) / len(scores), 1),
-        "max_score": max(scores),
-        "min_score": min(scores),
+        "total_readings":   len(readings),
+        "average_score":    round(sum(scores) / len(scores), 1),
+        "max_score":        max(scores),
+        "min_score":        min(scores),
         "risk_distribution": risk_counts
     }), 200
 
+@app.route('/', methods=['GET'])
+def grafana_health():
+    return '', 200
+
+@app.route('/grafana/search', methods=['POST'])
+@require_api_key
+def grafana_search():
+    return jsonify([
+        'drowsiness_score', 'blink_rate',
+        'eye_closure_duration', 'head_tilt_angle',
+        'reaction_delay', 'phone_risk_score'
+    ]), 200
+
+@app.route('/metrics', methods=['POST', 'GET'])
+def grafana_metrics():
+    return jsonify([
+        'drowsiness_score', 'blink_rate',
+        'eye_closure_duration', 'head_tilt_angle',
+        'reaction_delay', 'phone_risk_score'
+    ]), 200
+
+@app.route('/grafana/query', methods=['POST'])
+@require_api_key
+def grafana_query():
+    readings = load_readings()
+    if not readings:
+        return jsonify([]), 200
+    body    = request.get_json()
+    targets = [t['target'] for t in body.get('targets', [])]
+    METRICS = {
+        'drowsiness_score':     'drowsiness_score',
+        'blink_rate':           'blink_rate',
+        'eye_closure_duration': 'eye_closure_duration',
+        'head_tilt_angle':      'head_tilt_angle',
+        'reaction_delay':       'reaction_delay',
+        'phone_risk_score':     'phone_risk_score',
+    }
+    result = []
+    for target in targets:
+        field = METRICS.get(target)
+        if not field:
+            continue
+        datapoints = []
+        for r in readings:
+            if field not in r or 'timestamp' not in r:
+                continue
+            ts       = datetime.fromisoformat(r['timestamp'])
+            epoch_ms = int(ts.timestamp() * 1000)
+            datapoints.append([r[field], epoch_ms])
+        result.append({"target": target, "datapoints": datapoints})
+    return jsonify(result), 200
+
+@app.route('/query', methods=['POST'])
+@require_api_key
+def grafana_query_alias():
+    return grafana_query()
+
+@app.route('/ai/analyze', methods=['GET'])
+@require_api_key
+def ai_analyze():
+    readings = load_readings()
+    if len(readings) < 10:
+        return jsonify({"error": "Not enough data yet."}), 400
+    X     = extract_features(readings)
+    model = train_model(X)
+    results = []
+    for r in readings[-20:]:
+        result = predict(model, r)
+        results.append({
+            "timestamp":        r.get("timestamp"),
+            "state":            r.get("state"),
+            "drowsiness_score": r.get("drowsiness_score"),
+            "anomaly":          bool(result["anomaly"]),
+            "anomaly_score":    result["anomaly_score"]
+        })
+    anomaly_count = sum(1 for r in results if r["anomaly"])
+    return jsonify({
+        "total_analyzed":  len(results),
+        "anomalies_found": anomaly_count,
+        "anomaly_rate":    f"{round(anomaly_count / len(results) * 100, 1)}%",
+        "results":         results
+    }), 200
+
+@app.route('/alerts', methods=['GET'])
+@require_api_key
+def get_alerts():
+    alerts = load_alert_list()
+    limit  = request.args.get('limit', default=None, type=int)
+    if limit:
+        alerts = alerts[-limit:]
+    return jsonify({"total_alerts": len(alerts), "alerts": alerts}), 200
+
+@app.route('/alerts/latest', methods=['GET'])
+@require_api_key
+def latest_alert():
+    alerts = load_alert_list()
+    if not alerts:
+        return jsonify({"message": "No alerts yet"}), 200
+    return jsonify(alerts[-1]), 200
+
+if __name__ == '__main__':
+    app.run(debug=False, port=5000)
 # ── Grafana JSON datasource endpoints ────────────────────────────
 
 @app.route('/', methods=['GET'])
