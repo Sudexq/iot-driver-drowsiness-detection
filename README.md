@@ -475,7 +475,7 @@ cvzone
 - `camera/phone_detector.py` — phone usage detection
 - MediaPipe integration research and testing (Windows compatibility issues documented)
 
-### Buse Nur Elik
+### Busenaz Elik
 - `network/experiments.py` — packet loss, latency, burst tests
 - `network/report_generator.py` — automated experiment reporting
 - `security/crypto.py` — HMAC-SHA256 signing
