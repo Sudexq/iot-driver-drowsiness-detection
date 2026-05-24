@@ -8,9 +8,6 @@ opencv-python
 pydantic
 cryptography
 python-dotenv
-
 dlib
-
 scipy
-
 cvzone

@@ -1,18 +1,5 @@
 version: "3.8"
 
-# IoT Driver Drowsiness Detection — Docker Compose
-#
-# Başlatma:
-#   docker-compose up -d
-#
-# Durdurma:
-#   docker-compose down
-#
-# Gereksinimler:
-#   .env dosyasında şu değerlerin dolu olması gerekir:
-#     GRAFANA_ADMIN_USER
-#     GRAFANA_ADMIN_PASSWORD
-
 services:
 
   # ── Flask API ──────────────────────────────────────────────────
@@ -37,6 +24,37 @@ services:
       timeout: 10s
       retries: 3
 
+  # ── UDP Bridge ─────────────────────────────────────────────────
+  udp_bridge:
+    build:
+      context: .
+      dockerfile: Dockerfile
+    container_name: iot_udp_bridge
+    ports:
+      - "9999:9999/udp"
+    environment:
+      - IOT_HMAC_SECRET=${IOT_HMAC_SECRET}
+      - IOT_API_KEY=${IOT_API_KEY}
+    command: python network/udp_bridge.py
+    restart: unless-stopped
+    depends_on:
+      flask_api:
+        condition: service_healthy
+
+  # ── Simulator ──────────────────────────────────────────────────
+  simulator:
+    build:
+      context: .
+      dockerfile: Dockerfile
+    container_name: iot_simulator
+    environment:
+      - IOT_HMAC_SECRET=${IOT_HMAC_SECRET}
+      - IOT_API_KEY=${IOT_API_KEY}
+    command: python sensor/simulator.py
+    restart: unless-stopped
+    depends_on:
+      - udp_bridge
+
   # ── Grafana ────────────────────────────────────────────────────
   grafana:
     image: grafana/grafana:latest
@@ -44,14 +62,10 @@ services:
     ports:
       - "3000:3000"
     environment:
-      # Default admin/admin KULLANILMIYOR — .env'den okunuyor
       - GF_SECURITY_ADMIN_USER=${GRAFANA_ADMIN_USER}
       - GF_SECURITY_ADMIN_PASSWORD=${GRAFANA_ADMIN_PASSWORD}
-      # Dış kayıtları kapat
       - GF_USERS_ALLOW_SIGN_UP=false
-      # Anonim erişimi kapat
       - GF_AUTH_ANONYMOUS_ENABLED=false
-      # Grafana sürüm güncellemelerini gizle (production için)
       - GF_ANALYTICS_REPORTING_ENABLED=false
       - GF_ANALYTICS_CHECK_FOR_UPDATES=false
     volumes:
