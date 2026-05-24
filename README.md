@@ -1,9 +1,9 @@
-Demo: [https://drive.google.com/file/d/1NjJuhE9N6Ph3wyfvrTzj5CRxXEab7lv6/view?usp=sharing]
-
 # 🚗 AI-Driven IoT Driver Drowsiness Detection System
 
 An end-to-end IoT system that detects driver drowsiness in real time using behavioral
 sensor data, UDP networking, hybrid AI models, and live Grafana visualization.
+
+**🎥 Demo Video:** https://drive.google.com/file/d/1NjJuhE9N6Ph3wyfvrTzj5CRxXEab7lv6/view?usp=sharing
 
 ---
 
@@ -31,6 +31,7 @@ experiments (packet loss, latency, burst traffic) are included and analyzed with
 - **Grafana dashboard** — live visualization of all sensor metrics
 - **Network experiments** — packet loss, latency, burst traffic with measured results
 - **Wireshark traffic analysis** — UDP packet capture and protocol inspection
+- **Docker support** — full stack runs with a single command
 
 ---
 
@@ -224,9 +225,9 @@ drowsiness_detection/
 │
 ├── camera/
 │   ├── camera_detector.py        # Live webcam — Dlib EAR
-│   ├── hand_detector.py          # Both-hands-raised detection
-│   ├── calibrate_ear.py          # Personal EAR threshold calibration
-│   └── shape_predictor_68_face_landmarks.dat  # Dlib model (not in git)
+│   ├── hand_detector.py          # direction detection
+│   └── calibrate_ear.py          # Personal EAR threshold calibration
+│   # shape_predictor_68_face_landmarks.dat — download separately (see setup)
 │
 ├── network/
 │   ├── udp_bridge.py             # UDP listener → Flask forwarder
@@ -250,12 +251,20 @@ drowsiness_detection/
 │   ├── validators.py             # Input validation
 │   └── file_guard.py             # File permission guard
 │
+├── grafana/
+│   ├── grafana.ini               # Grafana configuration
+│   └── provisioning/             # Datasource provisioning
+│
 ├── data/
 │   ├── readings.json             # All sensor readings (persistent)
 │   ├── alerts.json               # All triggered alerts (persistent)
 │   └── reports/                  # Network experiment results
 │
-├── .env                          # Secrets (not committed)
+├── Dockerfile                    # Docker image (Python 3.12-slim)
+├── docker-compose.yml            # Full stack orchestration
+├── .env.example                  # Environment variable template
+├── .gitignore
+├── CONTRIBUTIONS.md              # Team contribution log
 └── requirements.txt
 ```
 
@@ -280,30 +289,66 @@ drowsiness_detection/
 
 ## ▶️ How to Run
 
-### Prerequisites
+### Option A — Docker (Recommended)
+
+The easiest way — no Python setup needed:
+
+```bash
+# 1. Clone the repo
+git clone https://github.com/Sudexq/iot-driver-drowsiness-detection.git
+cd iot-driver-drowsiness-detection
+
+# 2. Copy and fill in secrets
+cp .env.example .env
+# Edit .env: set IOT_HMAC_SECRET, IOT_API_KEY, GRAFANA_ADMIN_PASSWORD
+
+# 3. Start everything
+docker-compose up --build
+```
+
+Starts automatically:
+- Flask API → `http://localhost:5000`
+- UDP Bridge → port `9999`
+- Simulator → sends data automatically
+- Grafana → `http://localhost:3000`
+
+> **Note:** Camera mode requires manual setup — see Option B below.
+
+---
+
+### Option B — Manual Setup
+
+#### 1. Install dependencies
 
 ```bash
 pip install -r requirements.txt
 ```
 
-Copy `.env.example` to `.env` and fill in secrets:
-```
-IOT_HMAC_SECRET=your-secret-here
-IOT_API_KEY=your-api-key-here
+#### 2. Configure secrets
+
+```bash
+cp .env.example .env
+# Edit .env with your values
 ```
 
-Download the Dlib landmark model (required for camera mode):
+#### 3. Download Dlib landmark model (camera mode only)
+
 ```bash
 python -c "
 import urllib.request, bz2, os
-urllib.request.urlretrieve('http://dlib.net/files/shape_predictor_68_face_landmarks.dat.bz2', 'tmp.bz2')
-open('camera/shape_predictor_68_face_landmarks.dat', 'wb').write(bz2.open('tmp.bz2').read())
+urllib.request.urlretrieve(
+    'http://dlib.net/files/shape_predictor_68_face_landmarks.dat.bz2',
+    'tmp.bz2'
+)
+open('camera/shape_predictor_68_face_landmarks.dat', 'wb').write(
+    bz2.open('tmp.bz2').read()
+)
 os.remove('tmp.bz2')
 print('Done')
 "
 ```
 
-### Option A — Simulated sensor
+#### 4a. Run with simulated sensor
 
 ```bash
 # Terminal 1
@@ -316,21 +361,30 @@ python network/udp_bridge.py
 python sensor/simulator.py
 ```
 
-### Option B — Live camera (Python 3.12 venv required)
+#### 4b. Run with live camera (Python 3.12 required)
 
 ```bash
+py -3.12 -m venv venv312
+venv312\Scripts\activate
+pip install -r requirements.txt
+
 # Terminal 1
 python api/app.py
 
 # Terminal 2
 python network/udp_bridge.py
 
-# Terminal 3
-venv312\Scripts\activate
+# Terminal 3 (venv312 active)
 python camera/camera_detector.py
 ```
 
-### Network experiments
+#### Calibrate EAR threshold (optional but recommended)
+
+```bash
+python camera/calibrate_ear.py
+```
+
+#### Network experiments
 
 ```bash
 python network/experiments.py
@@ -341,10 +395,11 @@ python network/report_generator.py
 
 ## 📈 Grafana Dashboard
 
-1. Start Grafana: `net start grafana`
-2. Open `http://localhost:3000` (admin / admin)
-3. Datasource: `simpod-json-datasource` → `http://localhost:5000`
-4. Custom HTTP Header: `X-API-Key` → your `IOT_API_KEY`
+1. Start Grafana: `net start grafana` (or via Docker)
+2. Open `http://localhost:3000`
+3. Login: admin / admin (or your `.env` values)
+4. Datasource: `simpod-json-datasource` → `http://localhost:5000`
+5. Custom HTTP Header: `X-API-Key` → your `IOT_API_KEY`
 
 Panels: Drowsiness Score · Blink Rate · Eye Closure Duration · Head Tilt Angle · Reaction Delay
 
@@ -373,6 +428,9 @@ numpy
 pandas
 joblib
 opencv-python
+pydantic
+cryptography
+python-dotenv
 dlib
 scipy
 cvzone
@@ -398,7 +456,41 @@ cvzone
 
 ---
 
-## 👩‍💻 Author
+## 👥 Team Contributions
 
-**Sudenur Tilla**
-Final Year IoT Project — AI-Driven Driver Drowsiness Detection
+### Sudenur Tilla
+- `camera/camera_detector.py` — Dlib EAR, head tilt, hand detection
+- `camera/hand_detector.py` — both-hands-raised detection
+- `camera/calibrate_ear.py` — EAR calibration tool
+- `network/udp_bridge.py` — UDP bridge with HMAC verification
+- `sensor/simulator.py` — synthetic sensor simulator
+- `api/app.py` — Flask endpoints and drowsiness scoring
+- `ai/detector.py` — Isolation Forest anomaly detection
+- `alerts/alert_manager.py` — alert evaluation and storage
+- Grafana dashboard setup and configuration
+
+### Hilda Doğa Arslanpençesi
+- `alerts/sound_alert.py` — audio alarm system
+- `camera/gaze_detector.py` — gaze direction detection
+- `camera/phone_detector.py` — phone usage detection
+- MediaPipe integration research and testing (Windows compatibility issues documented)
+
+### Buse Nur Elik
+- `network/experiments.py` — packet loss, latency, burst tests
+- `network/report_generator.py` — automated experiment reporting
+- `security/crypto.py` — HMAC-SHA256 signing
+- `security/auth.py` — API key authentication
+- `security/replay_guard.py` — nonce-based replay protection
+- `security/validators.py` — input validation
+- `security/file_guard.py` — file permission guard
+- LaTeX report writing
+
+---
+
+## 🎓 Project Info
+
+**Course:** COM0453 Internet of Things — Spring 2026
+**Institution:** İstanbul Kültür University
+**Advisor:** Mehmet Fatih Yüce
+
+**Team:** Sudenur Tilla · Hilda Doğa Arslanpençesi · Buse Nur Elik
