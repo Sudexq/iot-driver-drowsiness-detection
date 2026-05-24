@@ -18,7 +18,7 @@
 - camera/hand_detector.py (both-hands-raised distraction detection)
 - MediaPipe integration research and testing (Windows compatibility issues documented)
 
-## Buse Nur Elik
+## Busenaz Elik
 - network/experiments.py (packet loss, latency, burst tests)
 - network/report_generator.py
 - security/crypto.py (HMAC-SHA256 signing)
