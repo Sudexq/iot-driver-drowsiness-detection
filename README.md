@@ -3,7 +3,7 @@
 An end-to-end IoT system that detects driver drowsiness in real time using behavioral
 sensor data, UDP networking, hybrid AI models, and live Grafana visualization.
 
-**🎥 Demo Video:** [https://drive.google.com/file/d/1NjJuhE9N6Ph3wyfvrTzj5CRxXEab7lv6/view?usp=sharing](https://youtu.be/twzPriZvwcs)
+**🎥 Demo Video:** https://youtu.be/twzPriZvwcs
 
 ---
 
