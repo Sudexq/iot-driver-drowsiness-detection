@@ -4,7 +4,6 @@
 - camera/camera_detector.py (Dlib EAR, head tilt, hand detection)
 - camera/hand_detector.py
 - camera/calibrate_ear.py
-- camera/calibrate_ear.py
 - network/udp_bridge.py
 - sensor/simulator.py
 - alerts/alert_manager.py
