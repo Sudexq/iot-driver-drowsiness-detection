@@ -493,4 +493,4 @@ cvzone
 **Institution:** İstanbul Kültür University
 **Advisor:** Mehmet Fatih Yüce
 
-**Team:** Sudenur Tilla · Hilda Doğa Arslanpençesi · Buse Nur Elik
+**Team:** Sudenur Tilla · Hilda Doğa Arslanpençesi · Busenaz Elik
