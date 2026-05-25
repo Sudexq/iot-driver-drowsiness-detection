@@ -1,0 +1,942 @@
+\documentclass[12pt, a4paper]{article}
+
+% ── Packages ──────────────────────────────────────────────────────
+\usepackage[utf8]{inputenc}
+\usepackage[T1]{fontenc}
+\usepackage[margin=2.5cm]{geometry}
+\usepackage{graphicx}
+\usepackage{hyperref}
+\usepackage{listings}
+\usepackage{xcolor}
+\usepackage{booktabs}
+\usepackage{tabularx}
+\usepackage{amsmath}
+\usepackage{float}
+\usepackage{fancyhdr}
+\usepackage{titlesec}
+\usepackage{parskip}
+\usepackage{microtype}
+\usepackage{enumitem}
+\usepackage{caption}
+\usepackage{subcaption}
+\usepackage{lmodern}
+
+% ── Hyperref setup ────────────────────────────────────────────────
+\hypersetup{
+    colorlinks=true,
+    linkcolor=black,
+    urlcolor=blue,
+    citecolor=black
+}
+
+% ── Header / footer ───────────────────────────────────────────────
+\pagestyle{fancy}
+\fancyhf{}
+\rhead{AI-Driven IoT Driver Drowsiness Detection}
+\lhead{Final Year Project}
+\rfoot{Page \thepage}
+\renewcommand{\headrulewidth}{0.4pt}
+
+% ── Code listing style ────────────────────────────────────────────
+\definecolor{codegray}{rgb}{0.95,0.95,0.95}
+\definecolor{codeblue}{rgb}{0.0,0.3,0.7}
+\definecolor{codegreen}{rgb}{0.1,0.5,0.1}
+\definecolor{codepurple}{rgb}{0.5,0.0,0.5}
+
+\lstdefinestyle{mystyle}{
+    backgroundcolor=\color{codegray},
+    commentstyle=\color{codegreen},
+    keywordstyle=\color{codeblue}\bfseries,
+    stringstyle=\color{codepurple},
+    basicstyle=\ttfamily\footnotesize,
+    breakatwhitespace=false,
+    breaklines=true,
+    captionpos=b,
+    keepspaces=true,
+    showspaces=false,
+    showstringspaces=false,
+    showtabs=false,
+    tabsize=2,
+    frame=single,
+    rulecolor=\color{gray!40}
+}
+\lstset{style=mystyle}
+
+% ── Title section ─────────────────────────────────────────────────
+\title{
+    \vspace{-1cm}
+    \Huge\textbf{AI-Driven IoT Driver Drowsiness Detection System} \\[0.5cm]
+    \large Final Year Project Report \\[0.3cm]
+    \normalsize Internet of Things — Department of Computer Engineering
+    \vspace{1cm}
+}
+\author{
+    \textbf{Sudenur Tilla} \\
+    \small Department of Computer Engineering \\
+    \small Istanbul Kultur University \\
+    \small Istanbul, Turkiye \\
+    \small 2200007172@stu.iku.edu.tr \\
+    \and
+    \textbf{Hilda Doğa Arslanpençesi} \\
+    \small Department of Computer Engineering \\
+    \small Istanbul Kultur University \\
+    \small Istanbul, Turkiye \\
+    \small 2100004850@stu.iku.edu.tr \\
+    \and
+    \textbf{Busenaz Elik} \\
+    \ Department of Computer Engineering \\
+    \small Istanbul Kultur University \\
+    \small Istanbul, Turkiye \\
+    \small 2100005914@stu.iku.edu.tr \\
+}
+\date{
+    \vspace{6cm}
+    \normalsize \textbf{Project Advisor} \\[0.2cm]
+    \normalsize Mehmet Fatih Yüce \\[0.2cm]
+    \normalsize Department of Computer Engineering \\
+    \normalsize İstanbul Kültür University \\[0.3cm]
+    \today
+}
+
+% ══════════════════════════════════════════════════════════════════
+\begin{document}
+% ══════════════════════════════════════════════════════════════════
+
+\maketitle
+\thispagestyle{empty}
+\vspace{1cm}
+
+\newpage
+% ── Abstract (English) ────────────────────────────────────────────
+\begin{abstract}
+Driver fatigue is a leading cause of road accidents worldwide. This report presents
+an end-to-end IoT system that detects driver drowsiness in real time by monitoring
+eye closure, blink rate, head tilt, and hand position through a webcam, and
+transmitting the resulting data over a secured UDP channel to a Flask-based backend.
+The system employs a two-layer AI approach: a rule-based drowsiness scorer that
+produces an explainable 0--100 risk score, and an Isolation Forest model for
+unsupervised anomaly detection. Alerts are triggered when either layer signals
+danger, accompanied by an audio alarm. A Grafana dashboard provides live
+visualization of all metrics. Security is enforced through HMAC-SHA256 packet
+signing, nonce-based replay attack prevention, and API key authentication.
+Network reliability is evaluated through controlled packet-loss, latency, and
+burst-traffic experiments whose results are captured with Wireshark.
+\end{abstract}
+
+\newpage
+
+% ── Özet (Türkçe) ─────────────────────────────────────────────────
+\renewcommand{\abstractname}{Özet}
+\begin{abstract}
+Sürücü yorgunluğu, dünya genelinde trafik kazalarının önde gelen nedenlerinden
+biridir. Bu rapor, göz kapanma süresi, göz kırpma hızı, baş eğimi ve el
+konumunu web kamerası aracılığıyla gerçek zamanlı olarak izleyen ve elde edilen
+verileri güvenli bir UDP kanalı üzerinden Flask tabanlı bir arka uca ileten
+uçtan uca bir IoT sistemini sunmaktadır. Sistem iki katmanlı bir yapay zeka
+yaklaşımı benimsemektedir: açıklanabilir bir 0--100 risk puanı üreten kural
+tabanlı uyuşukluk puanlayıcısı ve denetimsiz anomali tespiti için Isolation
+Forest modeli. Her iki katmandan herhangi biri tehlike sinyali verdiğinde,
+sesli alarm eşliğinde uyarı tetiklenmektedir. Grafana panosu tüm metriklerin
+canlı görselleştirmesini sağlamaktadır. Güvenlik; HMAC-SHA256 paket imzalama,
+nonce tabanlı tekrar saldırısı önleme ve API anahtarı kimlik doğrulama ile
+sağlanmaktadır. Ağ güvenilirliği, Wireshark ile yakalanan paket kaybı, gecikme
+ve ani trafik artışı deneyleriyle değerlendirilmektedir.
+\end{abstract}
+
+\newpage
+
+\vspace{0.5cm}
+\tableofcontents
+\newpage
+
+% ══════════════════════════════════════════════════════════════════
+\section{Introduction}
+% ══════════════════════════════════════════════════════════════════
+
+\subsection{Motivation}
+
+Driver drowsiness is one of the most dangerous and underreported factors in
+road traffic accidents. According to the World Health Organization, fatigue
+is estimated to be a contributing factor in up to 20\% of all road collisions
+worldwide~\cite{who2018}. Unlike alcohol impairment, drowsiness leaves no
+measurable trace after an accident, making prevention, rather than
+post-incident analysis, the only viable strategy.
+
+Modern commercial driver monitoring systems (Bosch DMS, Seeing Machines,
+Mobileye) achieve high accuracy but rely on proprietary hardware, dedicated
+infrared cameras, and closed-source software. This makes them inaccessible
+for academic research, low-cost deployment, or independent evaluation.
+
+This project addresses the question: \textit{Can a complete, real-time
+drowsiness detection pipeline be built using only open-source software and
+a standard laptop webcam?}
+
+\subsection{Project Goals}
+
+The system was designed with the following goals in mind:
+
+\begin{enumerate}
+    \item \textbf{Real IoT architecture} — sensor data must travel over actual
+          UDP network datagrams (not function calls), so that every packet is
+          visible in Wireshark and network conditions can be studied.
+
+    \item \textbf{Two-layer AI} — combine a transparent, rule-based scorer
+          (explainable to a non-technical audience) with an unsupervised
+          machine learning model (Isolation Forest) that catches subtle
+          anomalies the rules alone would miss.
+
+    \item \textbf{Dual input modes} — a live webcam module and a synthetic
+          simulator must be fully interchangeable, so the system can be
+          demonstrated and tested without a camera.
+
+    \item \textbf{Production-grade security} — every UDP packet must be
+          cryptographically signed and protected against replay attacks,
+          mirroring real IoT deployments where the network cannot be trusted.
+
+    \item \textbf{Live visualization} — a Grafana dashboard must display all
+          sensor metrics in real time, updating every 5 seconds.
+\end{enumerate}
+
+\subsection{Report Structure}
+
+The remainder of this report is organized as follows.
+Section~\ref{sec:arch} presents the overall system architecture and data flow.
+Section~\ref{sec:camera} details the camera-based detection module including
+the EAR algorithm and head tilt detection.
+Section~\ref{sec:simulator} describes the synthetic sensor simulator.
+Section~\ref{sec:network} explains the UDP transport layer and bridge.
+Section~\ref{sec:api} covers the Flask REST API.
+Section~\ref{sec:ai} presents the two-layer AI detection approach.
+Section~\ref{sec:security} describes the security mechanisms.
+Section~\ref{sec:experiments} reports the network impairment experiments.
+Section~\ref{sec:grafana} covers the Grafana dashboard.
+Section~\ref{sec:alerts} explains the alert system.
+Section~\ref{sec:results} evaluates overall system performance.
+Section~\ref{sec:discussion} discusses design decisions and limitations.
+Section~\ref{sec:conclusion} concludes with future work directions.
+
+% ══════════════════════════════════════════════════════════════════
+\section{System Architecture}
+\label{sec:arch}
+% ══════════════════════════════════════════════════════════════════
+
+\subsection{Overview}
+
+The system follows a layered IoT pipeline with four distinct tiers:
+
+\begin{enumerate}
+    \item \textbf{Sensing} — webcam or synthetic simulator produces sensor readings.
+    \item \textbf{Transport} — UDP datagrams carry HMAC-signed JSON payloads.
+    \item \textbf{Processing} — Flask API scores, analyses, and stores readings.
+    \item \textbf{Presentation} — Grafana renders live time-series dashboards.
+\end{enumerate}
+
+\subsection{Data Flow}
+
+Figure~\ref{fig:architecture} illustrates the complete data flow of the system,
+from sensor input to live dashboard visualization.
+
+\begin{figure}[H]
+    \centering
+    \includegraphics[width=\textwidth]{architecture.png}
+    \caption{System architecture and data flow}
+    \label{fig:architecture}
+\end{figure}
+
+\subsection{Component Summary}
+
+\begin{table}[H]
+\centering
+\caption{System components and their roles}
+\begin{tabularx}{\textwidth}{llX}
+\toprule
+\textbf{File} & \textbf{Language} & \textbf{Role} \\
+\midrule
+\texttt{camera/camera\_detector.py} & Python & Dlib EAR webcam detector \\
+\texttt{sensor/simulator.py}        & Python & Synthetic 3-state UDP sensor \\
+\texttt{network/udp\_bridge.py}     & Python & UDP listener, HMAC verifier, HTTP forwarder \\
+\texttt{api/app.py}                 & Python & Flask REST API, scorer, AI runner \\
+\texttt{ai/detector.py}             & Python & Isolation Forest training and prediction \\
+\texttt{alerts/alert\_manager.py}   & Python & Alert evaluation, storage, audio alarm \\
+\texttt{security/crypto.py}         & Python & HMAC-SHA256 sign and verify \\
+\texttt{security/replay\_guard.py}  & Python & Nonce-based replay attack prevention \\
+\texttt{network/experiments.py}     & Python & Packet loss, latency, burst experiments \\
+\bottomrule
+\end{tabularx}
+\end{table}
+
+% ══════════════════════════════════════════════════════════════════
+\section{Camera-Based Detection Module}
+\label{sec:camera}
+% ══════════════════════════════════════════════════════════════════
+
+\subsection{Eye Aspect Ratio (EAR)}
+
+The camera module uses the Dlib 68-point facial landmark predictor to locate the
+six landmark points around each eye. The Eye Aspect Ratio is defined as:
+
+\begin{equation}
+    \text{EAR} = \frac{\|p_2 - p_6\| + \|p_3 - p_5\|}{2\,\|p_1 - p_4\|}
+\end{equation}
+
+where $p_1 \ldots p_6$ are the six eye landmark points in clockwise order.
+When the eye is open, EAR is approximately 0.20--0.35. When the eye closes,
+EAR drops toward zero. A threshold of $\text{EAR} < 0.15$ is used to classify
+the eye as closed; this value is calibrated per user using \texttt{calibrate\_ear.py}.
+
+\subsection{Calibration Procedure}
+
+Before first use, the user runs a two-phase calibration:
+
+\begin{enumerate}
+    \item \textbf{Phase 1 (5 s):} Keep eyes open $\rightarrow$ measure average open EAR.
+    \item \textbf{Phase 2 (5 s):} Keep eyes closed $\rightarrow$ measure average closed EAR.
+\end{enumerate}
+
+The threshold is set at:
+\begin{equation}
+    \text{threshold} = \text{EAR}_\text{closed} + 0.35 \times (\text{EAR}_\text{open} - \text{EAR}_\text{closed})
+\end{equation}
+
+For the primary test subject: $\text{EAR}_\text{open} = 0.218$,
+$\text{EAR}_\text{closed} = 0.114$, giving $\text{threshold} = 0.150$.
+
+\subsection{Detected Signals}
+
+\begin{table}[H]
+\centering
+\caption{Camera-detected drowsiness signals}
+\begin{tabularx}{\textwidth}{lXll}
+\toprule
+\textbf{Signal} & \textbf{Method} & \textbf{Normal} & \textbf{Drowsy} \\
+\midrule
+Eye closure duration & EAR below threshold & $<0.4$ s & $>2.0$ s \\
+Blink rate           & 60 s rolling window & 15--20 /min & $<6$ /min \\
+Head tilt (lateral)  & Eye-corner angle    & $0$--$15°$ & $>25°$ for $>4$ s \\
+Head tilt (forward)  & Nose--chin ratio    & normal dist. & ratio drop \\
+Both hands raised    & Skin contour area   & 0 contours UP & 2 contours UP $>1.5$ s \\
+\bottomrule
+\end{tabularx}
+\end{table}
+
+\subsection{Head Tilt Detection}
+
+Two tilt axes are monitored simultaneously:
+
+\textbf{Lateral tilt} is computed from the angle formed by the left and right
+outer eye corners (landmarks 36 and 45):
+\begin{equation}
+    \theta_\text{lateral} = \left|\arctan\!\left(\frac{y_R - y_L}{x_R - x_L}\right)\right|
+\end{equation}
+
+\textbf{Forward tilt} is detected by measuring the normalised vertical distance
+between the nose tip (landmark 30) and chin (landmark 8). As the head drops
+forward, this distance decreases:
+\begin{equation}
+    \theta_\text{forward} = \max\!\left(0,\; \frac{0.13 - d_\text{norm}}{0.13} \times 45\right)
+\end{equation}
+
+The larger of the two angles is reported as \texttt{head\_tilt\_angle}.
+A duration timer tracks how long the head has been tilted beyond $15°$.
+
+\subsection{UDP Packet Format}
+
+Every second, the camera module transmits:
+
+\begin{lstlisting}[language=Python, caption={Camera UDP payload}]
+{
+  "driver_id":            "driver_camera_001",
+  "state":                "alert",          # alert | transitioning | drowsy
+  "blink_rate":           17.2,
+  "eye_closure_duration": 0.142,
+  "head_tilt_angle":      3.1,
+  "head_tilt_duration":   0.0,
+  "reaction_delay":       250.0,
+  "source":               "camera",
+  "nonce":                "a3f2c1d4-...",
+  "sent_at":              "2026-05-18T14:33:54+00:00"
+}
+\end{lstlisting}
+
+% ══════════════════════════════════════════════════════════════════
+\section{Synthetic Sensor Simulator}
+\label{sec:simulator}
+% ══════════════════════════════════════════════════════════════════
+
+The simulator (\texttt{sensor/simulator.py}) generates realistic sensor readings
+without requiring a webcam. It cycles through three states:
+
+\begin{table}[H]
+\centering
+\caption{Simulator state machine}
+\begin{tabularx}{\textwidth}{lXl}
+\toprule
+\textbf{State} & \textbf{Sensor values} & \textbf{Duration} \\
+\midrule
+\texttt{alert}         & blink 15--20/min, eye $<0.2$ s, tilt $<10°$ & 10 s \\
+\texttt{transitioning} & blink 8--15/min, eye 0.2--0.5 s, tilt 10--20° & 8 s \\
+\texttt{drowsy}        & blink $<8$/min, eye $>0.5$ s, tilt $>20°$, react $>400$ ms & 12 s \\
+\bottomrule
+\end{tabularx}
+\end{table}
+
+Gaussian noise is added to each value to simulate biological variance. The output
+JSON structure is identical to the camera module, so the downstream pipeline
+requires no modification to switch between sources.
+
+% ══════════════════════════════════════════════════════════════════
+\section{Network Transport Layer}
+\label{sec:network}
+% ══════════════════════════════════════════════════════════════════
+
+\subsection{Why UDP?}
+
+UDP was chosen over TCP for the following reasons:
+
+\begin{itemize}
+    \item \textbf{Low latency:} No connection setup, no acknowledgement round-trips.
+    \item \textbf{IoT realism:} Real vehicle telematics systems (CAN bus gateways,
+          V2X) use UDP or UDP-like protocols.
+    \item \textbf{Observability:} Every datagram is individually visible in Wireshark,
+          enabling meaningful packet-loss and latency experiments.
+    \item \textbf{Experiment validity:} TCP's automatic retransmission would mask
+          packet loss; UDP exposes it directly.
+\end{itemize}
+
+\subsection{UDP Bridge}
+
+\texttt{network/udp\_bridge.py} listens on port 9999, performs security checks,
+measures per-packet latency, and forwards the payload to the Flask API:
+
+\begin{enumerate}
+    \item Receive raw UDP datagram.
+    \item Decode JSON envelope \texttt{\{payload, sig\}}.
+    \item Verify HMAC-SHA256 signature.
+    \item Check nonce has not been seen before (replay guard).
+    \item Record timestamp, compute latency.
+    \item Forward payload via HTTP POST to \texttt{localhost:5000/sensor-data}.
+    \item Log result: packet size, latency, Flask response code, risk level.
+\end{enumerate}
+
+\subsection{Observed Latency}
+
+Under normal local conditions the bridge achieves sub-millisecond forwarding
+latency (average $\approx 0.4$ ms). This is well within the 1-second sampling
+interval, introducing no perceptible delay to the alert pipeline.
+
+% ══════════════════════════════════════════════════════════════════
+\section{Backend API}
+\label{sec:api}
+% ══════════════════════════════════════════════════════════════════
+
+\subsection{Flask Endpoints}
+
+\begin{table}[H]
+\centering
+\caption{REST API endpoints}
+\begin{tabularx}{\textwidth}{llX}
+\toprule
+\textbf{Method} & \textbf{Endpoint} & \textbf{Description} \\
+\midrule
+GET  & \texttt{/health}             & Status and total reading count \\
+POST & \texttt{/sensor-data}        & Receive and process one reading \\
+GET  & \texttt{/readings}           & All stored readings \\
+GET  & \texttt{/readings?limit=N}   & Last $N$ readings \\
+GET  & \texttt{/readings/summary}   & Average score, risk distribution \\
+GET  & \texttt{/ai/analyze}         & AI analysis on last 20 readings \\
+GET  & \texttt{/alerts}             & All triggered alerts \\
+GET  & \texttt{/alerts/latest}      & Most recent alert \\
+POST & \texttt{/query}              & Grafana time-series endpoint \\
+POST & \texttt{/metrics}            & Grafana metric list \\
+\bottomrule
+\end{tabularx}
+\end{table}
+
+\subsection{Request Processing Pipeline}
+
+On each \texttt{POST /sensor-data}:
+
+\begin{enumerate}
+    \item Input validation with Pydantic (field types, value ranges).
+    \item Timestamp assignment (UTC ISO-8601).
+    \item Rule-based drowsiness score computation.
+    \item Risk level classification (alert / warning / danger).
+    \item Isolation Forest prediction (if $\geq 10$ readings available).
+    \item Alert evaluation and optional alert creation.
+    \item Append reading to \texttt{data/readings.json}.
+    \item Return JSON response with score, risk level, and AI flag.
+\end{enumerate}
+\newpage
+% ══════════════════════════════════════════════════════════════════
+\section{AI Detection — Two Layers}
+\label{sec:ai}
+% ══════════════════════════════════════════════════════════════════
+
+\subsection{Layer 1: Rule-Based Drowsiness Scorer}
+
+Each sensor field is mapped to a normalised danger score $s \in [0, 1]$
+using a piecewise linear function. The composite score is:
+
+\begin{equation}
+    S = 100 \times \bigl(
+        0.20\,s_\text{blink}
+      + 0.24\,s_\text{eye}
+      + 0.20\,s_\text{tilt}
+      + 0.16\,s_\text{react}
+      + 0.20\,s_\text{phone}
+    \bigr)
+\end{equation}
+
+The scoring functions are:
+
+\begin{align}
+    s_\text{blink}  &= \min\!\left(1,\; \frac{\max(0,\;15 - r_b)}{10}\right) \\
+    s_\text{eye}    &= \min\!\left(1,\; \frac{\max(0,\; d - 0.40)}{2.10}\right) \\
+    s_\text{tilt}   &= \min\!\left(1,\; \frac{\max(0,\; \theta - 15)}{30}\right) \\
+    s_\text{react}  &= \min\!\left(1,\; \frac{\max(0,\; t - 300)}{600}\right)
+\end{align}
+
+where $r_b$ is blink rate (blinks/min), $d$ is eye closure duration (s),
+$\theta$ is head tilt angle (degrees), and $t$ is reaction delay (ms).
+
+Risk levels are assigned as:
+
+\begin{table}[H]
+\centering
+\caption{Risk level thresholds}
+\begin{tabular}{ccc}
+\toprule
+\textbf{Score range} & \textbf{Risk level} & \textbf{Indicator} \\
+\midrule
+0--39  & Alert   & \textcolor{green}{$\bullet$} \\
+40--69 & Warning & \textcolor{orange}{$\bullet$} \\
+70--100 & Danger & \textcolor{red}{$\bullet$} \\
+\bottomrule
+\end{tabular}
+\end{table}
+
+\subsection{Layer 2: Isolation Forest (Unsupervised Anomaly Detection)}
+
+Isolation Forest~\cite{liu2008isolation} is an ensemble method that isolates
+observations by randomly partitioning the feature space. Anomalous points
+(drowsy readings) require fewer partitions to isolate than normal points,
+resulting in a lower anomaly score.
+
+The model is configured as:
+
+\begin{lstlisting}[language=Python, caption={Isolation Forest configuration}]
+IsolationForest(
+    n_estimators=100,
+    contamination=0.15,   # expect ~15% anomalous readings
+    random_state=42
+)
+\end{lstlisting}
+
+Features used: \texttt{blink\_rate}, \texttt{eye\_closure\_duration},
+\texttt{head\_tilt\_angle}, \texttt{reaction\_delay}.
+
+The model is retrained on all available readings with every new incoming packet.
+No labels are required — the model learns the distribution of normal readings
+and flags deviations automatically.
+
+\subsection{Alert Trigger Conditions}
+
+An alert fires when \textbf{either} condition is met:
+
+\begin{itemize}
+    \item Drowsiness score $S \geq 65$
+    \item Isolation Forest anomaly score $< -0.08$
+\end{itemize}
+
+Using both conditions in parallel reduces false negatives: the rule-based
+layer catches clear threshold violations; the AI layer catches subtle
+multi-dimensional anomalies that individual thresholds miss.
+
+\subsection{AI Evaluation Results}
+
+After training on 1,847 readings (615 drowsy, 616 alert, 616 transitioning):
+
+\begin{table}[H]
+\centering
+\caption{Isolation Forest performance on held-out drowsy readings}
+\begin{tabular}{lcc}
+\toprule
+\textbf{Metric} & \textbf{Value} \\
+\midrule
+Total readings & 1,847 \\
+Drowsy readings & 615 \\
+Anomaly detection rate (drowsy) & $\approx 65\%$ \\
+False positive rate (alert readings) & $<5\%$ \\
+\bottomrule
+\end{tabular}
+\end{table}
+
+The 65\% detection rate reflects the \texttt{contamination=0.15} setting:
+only the most extreme 15\% of readings are classified as anomalies. Higher
+contamination values improve recall at the cost of more false positives.
+
+\newpage
+% ══════════════════════════════════════════════════════════════════
+\section{Security Layer}
+\label{sec:security}
+% ══════════════════════════════════════════════════════════════════
+
+\subsection{Threat Model}
+
+The following threats are addressed:
+
+\begin{itemize}
+    \item \textbf{Payload tampering:} An attacker on the local network modifies
+          sensor values to suppress or fabricate alerts.
+    \item \textbf{Replay attacks:} A captured packet is retransmitted to flood
+          the API or replay a clean reading during a drowsy episode.
+    \item \textbf{Unauthorised API access:} An unauthenticated client reads or
+          injects readings via the REST endpoints.
+\end{itemize}
+
+\subsection{HMAC-SHA256 Packet Signing}
+
+Every outgoing packet is wrapped in a signed envelope:
+
+\begin{lstlisting}[language=Python, caption={HMAC envelope structure}]
+{
+    "payload": { ...sensor fields... },
+    "sig":     "<hex HMAC-SHA256>"
+}
+\end{lstlisting}
+
+The signature is computed over the canonical JSON serialisation of the payload
+(keys sorted, no whitespace). The bridge rejects any packet whose signature
+does not match. The shared secret (\texttt{IOT\_HMAC\_SECRET}) is stored in
+\texttt{.env} and never transmitted.
+
+\subsection{Nonce-Based Replay Prevention}
+
+Each payload includes a UUID4 nonce and a timestamp (\texttt{sent\_at}).
+The bridge maintains an in-memory set of seen nonces. Any packet whose nonce
+has already been processed is rejected with a log message. This prevents
+replay attacks even if a valid signed packet is captured and retransmitted.
+
+\subsection{API Key Authentication}
+
+All Flask endpoints (except \texttt{/health} and \texttt{/metrics}) require
+an \texttt{X-API-Key} header matching \texttt{IOT\_API\_KEY} from \texttt{.env}.
+The \texttt{@require\_api\_key} decorator is applied at the route level.
+Grafana's datasource is configured with the same header.
+
+% ══════════════════════════════════════════════════════════════════
+\section{Network Experiments}
+\label{sec:experiments}
+% ══════════════════════════════════════════════════════════════════
+
+\subsection{Experimental Setup}
+
+Three network conditions were simulated using \texttt{network/experiments.py},
+which programmatically introduces impairments at the sender side. Wireshark
+was used to capture and verify the traffic on \texttt{udp.port == 9999}.
+
+\subsection{Experiment 1: Packet Loss}
+
+Packets were dropped at the application layer with probabilities from 0\% to 50\%.
+
+\begin{table}[H]
+\centering
+\caption{Packet loss experiment results}
+\begin{tabular}{cccc}
+\toprule
+\textbf{Loss rate} & \textbf{Sent} & \textbf{Received} & \textbf{Delivery rate} \\
+\midrule
+0\%  & 20 & 20 & 100\% \\
+10\% & 20 & 18 & 90\% \\
+25\% & 20 & 15 & 75\% \\
+50\% & 20 & 10 & 50\% \\
+\bottomrule
+\end{tabular}
+\end{table}
+
+\textbf{Finding:} At 25\% loss, alert latency increases by approximately 2--3 seconds
+as consecutive readings may be missed. At 50\% loss, drowsy episodes of less
+than 6 seconds may go undetected.
+
+\subsection{Experiment 2: Injected Latency}
+
+Artificial delays from 0 ms to 500 ms were added before each UDP send.
+
+\begin{table}[H]
+\centering
+\caption{Latency experiment results}
+\begin{tabular}{ccc}
+\toprule
+\textbf{Injected delay} & \textbf{Bridge latency (avg)} & \textbf{Alert impact} \\
+\midrule
+0 ms   & 0.4 ms & None \\
+100 ms & 100.4 ms & Negligible \\
+250 ms & 250.4 ms & Minor ($<1$ s added) \\
+500 ms & 500.4 ms & Noticeable delay \\
+\bottomrule
+\end{tabular}
+\end{table}
+
+\textbf{Finding:} Since the sampling interval is 1 second, delays below 500 ms
+have no practical impact on alert timing. The system tolerates up to 900 ms
+of injected delay without missing a sampling window.
+
+\subsection{Experiment 3: Burst Traffic}
+
+Burst packets (1--50 packets sent simultaneously) were injected to test
+buffer handling.
+
+\begin{table}[H]
+\centering
+\caption{Burst traffic experiment results}
+\begin{tabular}{ccc}
+\toprule
+\textbf{Burst size} & \textbf{Processing time} & \textbf{Packets lost} \\
+\midrule
+1   & $<1$ ms  & 0 \\
+10  & 8 ms     & 0 \\
+25  & 21 ms    & 0 \\
+50  & 45 ms    & 0 \\
+\bottomrule
+\end{tabular}
+\end{table}
+
+\textbf{Finding:} The bridge processes all burst packets without loss. The
+Flask API queues requests during bursts; all readings are eventually stored.
+
+% ══════════════════════════════════════════════════════════════════
+\section{Grafana Dashboard}
+\label{sec:grafana}
+% ══════════════════════════════════════════════════════════════════
+
+The Grafana dashboard provides live monitoring through five time-series panels,
+each polling the Flask \texttt{/query} endpoint every 5 seconds via the
+\texttt{simpod-json-datasource} plugin.
+
+\begin{table}[H]
+\centering
+\caption{Grafana dashboard panels}
+\begin{tabularx}{\textwidth}{lXl}
+\toprule
+\textbf{Panel} & \textbf{What it shows} & \textbf{Expected range} \\
+\midrule
+Drowsiness Score      & Composite 0--100 risk score & 0--40 (alert) \\
+Blink Rate            & Blinks per minute (60 s window) & 15--20 \\
+Eye Closure Duration  & Eye closed time per event & 0.1--0.4 s \\
+Head Tilt Angle       & Degrees from upright & 0--15° \\
+Reaction Delay        & Response latency & 150--300 ms \\
+\bottomrule
+\end{tabularx}
+\end{table}
+
+The dashboard is configured with \texttt{Last 1 hour} time range and 5-second
+auto-refresh. During a drowsy episode, spikes are immediately visible in the
+Drowsiness Score, Eye Closure Duration, and Reaction Delay panels simultaneously.
+
+% ══════════════════════════════════════════════════════════════════
+\section{Alert System}
+\label{sec:alerts}
+% ══════════════════════════════════════════════════════════════════
+
+When an alert condition is met, the system:
+
+\begin{enumerate}
+    \item Prints a formatted alert block to the terminal.
+    \item Appends a structured record to \texttt{data/alerts.json}.
+    \item Plays an audio alarm via \texttt{alerts/sound\_alert.py}.
+\end{enumerate}
+
+Each alert record contains:
+
+\begin{lstlisting}[language=Python, caption={Alert record structure}]
+{
+    "alert_id":         421,
+    "timestamp":        "2026-05-18T13:30:46+00:00",
+    "driver_id":        "driver_camera_001",
+    "drowsiness_score": 67.3,
+    "risk_level":       "warning",
+    "ai_anomaly":       true,
+    "ai_score":         -0.0890,
+    "reasons":          ["AI anomaly detected (score: -0.0890)"],
+    "sensor_snapshot":  {
+        "blink_rate":           8.2,
+        "eye_closure_duration": 2.15,
+        "head_tilt_angle":      4.3,
+        "reaction_delay":       250.0
+    }
+}
+\end{lstlisting}
+\newpage
+
+% ══════════════════════════════════════════════════════════════════
+\section{Results and Evaluation}
+\label{sec:results}
+% ══════════════════════════════════════════════════════════════════
+
+\subsection{End-to-End Latency}
+
+The total latency from a drowsy event occurring to an alert being triggered
+was measured across 50 trials:
+
+\begin{table}[H]
+\centering
+\caption{End-to-end alert latency}
+\begin{tabular}{lc}
+\toprule
+\textbf{Stage} & \textbf{Latency} \\
+\midrule
+Camera frame capture to UDP send & $<33$ ms (30 fps) \\
+UDP send to bridge receive & $<1$ ms (local) \\
+Bridge to Flask API & $0.4$ ms (avg) \\
+Flask processing (score + AI) & $<50$ ms \\
+\midrule
+\textbf{Total (camera to alert)} & $\mathbf{<500}$ \textbf{ms} \\
+\bottomrule
+\end{tabular}
+\end{table}
+
+\subsection{Detection Performance}
+
+\begin{table}[H]
+\centering
+\caption{Detection accuracy by input mode}
+\begin{tabularx}{\textwidth}{Xcc}
+\toprule
+\textbf{Condition} & \textbf{Simulator} & \textbf{Camera} \\
+\midrule
+Eyes closed $>2$ s detected       & 100\% & $\approx 95\%$ \\
+Head tilt $>4$ s detected         & 100\% & $\approx 90\%$ \\
+Normal state correctly classified & 100\% & $\approx 92\%$ \\
+AI anomaly on drowsy readings     & $\approx 65\%$ & $\approx 60\%$ \\
+\bottomrule
+\end{tabularx}
+\end{table}
+
+Camera detection rates are lower than simulator rates due to real-world
+factors: varying lighting, face occlusion, and head pose variation. The
+EAR-based approach significantly outperformed the initial Haar Cascade
+implementation, which produced unstable blink rates of 50--60 blinks/min.
+
+\subsection{Security Verification}
+
+\begin{table}[H]
+\centering
+\caption{Security mechanism verification}
+\begin{tabular}{lcc}
+\toprule
+\textbf{Attack} & \textbf{Attempted} & \textbf{Blocked} \\
+\midrule
+Unsigned packet         & 20 & 20 (100\%) \\
+Tampered payload        & 20 & 20 (100\%) \\
+Replay (duplicate nonce) & 20 & 20 (100\%) \\
+Missing API key         & 20 & 20 (100\%) \\
+\bottomrule
+\end{tabular}
+\end{table}
+\newpage
+% ══════════════════════════════════════════════════════════════════
+\section{Discussion}
+\label{sec:discussion}
+% ══════════════════════════════════════════════════════════════════
+
+\subsection{Design Decisions}
+
+\textbf{Dlib over Haar Cascade:}
+The initial implementation used OpenCV Haar Cascade classifiers for eye detection.
+This approach produced erratic blink counts (50--60 blinks/min at rest) because
+the cascade frequently loses eye detection between frames. Switching to Dlib's
+EAR algorithm eliminated this problem — EAR is computed directly from landmark
+coordinates and is robust to brief detection gaps.
+
+\textbf{Isolation Forest over supervised learning:}
+A supervised classifier would require a large, labelled dataset of real drowsy
+driving footage — impractical for a single-person project. Isolation Forest
+requires no labels and trains on whatever data is available, making it ideal
+for a system that collects its own training data in real time.
+
+\textbf{UDP over TCP:}
+While TCP would guarantee delivery, it would also hide the packet loss that
+is a defining characteristic of real IoT deployments. UDP makes the network
+behaviour explicit and measurable, which is essential for the network
+experiments section of this project.
+
+\subsection{Limitations}
+
+\begin{itemize}
+    \item \textbf{Skin-colour hand detection} is sensitive to lighting conditions
+          and misclassifies background regions. MediaPipe Hands would provide
+          much higher reliability but does not support Windows with Python 3.12.
+    \item \textbf{Single driver} — the EAR threshold is calibrated per user.
+          A production system would require automatic per-session calibration.
+    \item \textbf{Reaction delay} is a fixed baseline (250 ms) rather than a
+          measured response to a stimulus. A real measurement would require
+          a physical button or screen interaction.
+    \item \textbf{Isolation Forest retraining} on every incoming packet is
+          computationally wasteful. A production system would retrain
+          periodically or use an online learning algorithm.
+\end{itemize}
+\newpage
+% ══════════════════════════════════════════════════════════════════
+\section{Conclusion}
+\label{sec:conclusion}
+% ══════════════════════════════════════════════════════════════════
+
+This project demonstrates a complete, production-inspired IoT pipeline for
+driver drowsiness detection. The key contributions are:
+
+\begin{enumerate}
+    \item A \textbf{dual-input} architecture where simulator and camera modes
+          are fully interchangeable without any downstream code changes.
+    \item A \textbf{two-layer AI} system combining transparent rule-based
+          scoring with unsupervised anomaly detection.
+    \item A \textbf{full security stack} — HMAC signing, nonce-based replay
+          prevention, and API key authentication — applied to an IoT UDP pipeline.
+    \item \textbf{Quantified network experiments} covering packet loss,
+          latency, and burst traffic with Wireshark validation.
+    \item A \textbf{calibrated EAR-based} camera module using Dlib's 68-point
+          landmark model, achieving sub-500 ms alert latency.
+\end{enumerate}
+
+Future work could address the identified limitations by integrating a
+cross-platform hand landmark model, implementing per-session EAR auto-calibration,
+and replacing the fixed reaction delay with a measured stimulus-response protocol.
+Deployment on a Raspberry Pi with a dedicated camera module would also
+validate the system under genuine embedded IoT constraints.
+\newpage
+% ══════════════════════════════════════════════════════════════════
+% References
+% ══════════════════════════════════════════════════════════════════
+\newpage
+\begin{thebibliography}{9}
+
+\bibitem{liu2008isolation}
+F.~T. Liu, K.~M. Ting, and Z.-H. Zhou,
+``Isolation Forest,''
+in \textit{Proc. 8th IEEE Int. Conf. Data Mining (ICDM)},
+pp.~413--422, 2008.
+
+\bibitem{soukupova2016eye}
+T.~Soukupova and J.~Cech,
+``Real-Time Eye Blink Detection using Facial Landmarks,''
+in \textit{21st Computer Vision Winter Workshop}, 2016.
+
+\bibitem{dlib}
+D.~E. King,
+``Dlib-ml: A Machine Learning Toolkit,''
+\textit{Journal of Machine Learning Research}, vol.~10,
+pp.~1755--1758, 2009.
+
+\bibitem{who2018}
+World Health Organization,
+``Global Status Report on Road Safety 2018,''
+Geneva: WHO, 2018.
+
+\bibitem{sklearn}
+F.~Pedregosa et al.,
+``Scikit-learn: Machine Learning in Python,''
+\textit{Journal of Machine Learning Research}, vol.~12,
+pp.~2825--2830, 2011.
+
+\end{thebibliography}
+
+\end{document}
